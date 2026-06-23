@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Streak Tracker · Hawky{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            coral: {
+              DEFAULT: '#E55A3F',
+              hover: '#D14A30',
+              deep: '#A8351E',
+              subtle: '#FEF1EE',
+              soft: '#FDDDD3',
+              warm: '#F7A18C',
+            },
+            ink:  { 900: '#18181B', 600: '#52525B', 400: '#A1A1AA' },
+            surf: { 0: '#FFFFFF', 50: '#FAFAFA', 100: '#F4F4F5', 200: '#E4E4E7' },
+          },
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          borderRadius: { card: '6px', chip: '4px', modal: '8px' },
+        }
+      }
+    }
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    html, body { font-family: 'Inter', system-ui, sans-serif; }
+    [x-cloak] { display: none !important; }
+    *:focus-visible {
+      outline: 2px solid #E55A3F;
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+    .tnum { font-variant-numeric: tabular-nums; }
+    .stripe-weekend {
+      background-image: repeating-linear-gradient(
+        45deg,
+        #F4F4F5 0, #F4F4F5 2px,
+        #FFFFFF 2px, #FFFFFF 6px
+      );
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+    /* Screen-reader-only utility */
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+    /* Loading skeleton */
+    .skeleton {
+      background: linear-gradient(90deg, #FEF1EE 25%, #FDDDD3 50%, #FEF1EE 75%);
+      background-size: 200% 100%;
+      animation: skel 1.4s ease-in-out infinite;
+    }
+    @keyframes skel {
+      0% { background-position: 200% 0; } 100% { background-position: -200% 0; }
+    }
+    /* Click-row affordance: cursor + focus state */
+    tr[role="link"] { cursor: pointer; }
+    tr[role="link"]:focus-visible { outline: 2px solid #E55A3F; outline-offset: -2px; }
+
+    /* CSS-only tooltip system. Add class="tip-host" data-tip="…" to any element.
+       Scales to thousands of cells (no JS per cell). */
+    .tip-host { position: relative; }
+    .tip-host[data-tip]:hover::after,
+    .tip-host[data-tip]:focus-visible::after {
+      content: attr(data-tip);
+      position: absolute; bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%);
+      background: #18181B; color: white;
+      padding: 5px 9px; border-radius: 4px;
+      font-size: 11px; font-weight: 500; line-height: 1.4;
+      white-space: pre; z-index: 60;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+      pointer-events: none;
+    }
+    .tip-host[data-tip]:hover::before,
+    .tip-host[data-tip]:focus-visible::before {
+      content: ''; position: absolute; bottom: calc(100% + 2px); left: 50%;
+      transform: translateX(-50%);
+      border: 4px solid transparent; border-top-color: #18181B;
+      z-index: 60; pointer-events: none;
+    }
+
+    /* Print stylesheet — clean printable dashboard */
+    @media print {
+      header, footer, nav, form, .no-print { display: none !important; }
+      body { background: white !important; }
+      main { max-width: 100% !important; padding: 0 !important; }
+      .matrix-wrap { max-height: none !important; overflow: visible !important; }
+      a { color: inherit !important; text-decoration: none !important; }
+      .border-coral, .bg-coral, .bg-coral-subtle, .bg-coral-soft, .bg-coral-warm,
+      .bg-coral-deep { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      section { page-break-inside: avoid; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-white text-ink-900 antialiased min-h-screen">
+  <header class="border-b border-surf-200 bg-white sticky top-0 z-30">
+    <div class="max-w-[1440px] mx-auto px-6 h-14 flex items-center justify-between gap-4">
+      <a href="{{ url_for('index') }}" class="flex items-center gap-2 font-semibold text-base">
+        <span class="inline-block w-2 h-2 rounded-full bg-coral"></span>
+        Streak Tracker
+        <span class="text-ink-400 font-normal text-sm hidden sm:inline">· Hawky</span>
+      </a>
+      <nav class="flex items-center gap-1 text-sm" aria-label="Main">
+        <a href="{{ url_for('index') }}"
+           class="px-3 py-1.5 rounded-card hover:bg-surf-100 {% if request.endpoint == 'index' %}text-coral-deep font-semibold{% endif %}">List</a>
+        <a href="{{ url_for('copilot_page') }}"
+           class="px-3 py-1.5 rounded-card hover:bg-surf-100 {% if request.endpoint == 'copilot_page' %}text-coral-deep font-semibold{% endif %}">Co-Pilot</a>
+        <a href="{{ url_for('creatives_page') }}"
+           class="px-3 py-1.5 rounded-card hover:bg-surf-100 {% if request.endpoint in ('creatives_page', 'creatives_brand_page') %}text-coral-deep font-semibold{% endif %}">Creatives</a>
+        <a href="{{ url_for('compare_page') }}"
+           class="px-3 py-1.5 rounded-card hover:bg-surf-100 {% if request.endpoint == 'compare_page' %}text-coral-deep font-semibold{% endif %}">Compare</a>
+        <a href="{{ url_for('config_page') }}"
+           class="px-3 py-1.5 rounded-card hover:bg-surf-100 {% if request.endpoint == 'config_page' %}text-coral-deep font-semibold{% endif %}">Config</a>
+      </nav>
+      <div class="flex items-center gap-2 text-xs text-ink-600" x-data="refreshChip()">
+        <span x-text="status" aria-live="polite" role="status"></span>
+        <button @click="snapshot" type="button"
+                aria-label="Take a snapshot of the current state"
+                class="px-3 py-1.5 rounded-card border border-coral text-coral-deep hover:bg-coral-subtle text-xs font-medium">
+          Snapshot
+        </button>
+        <button @click="trigger" type="button"
+                aria-label="Refresh data from Mixpanel now"
+                class="px-3 py-1.5 rounded-card bg-coral text-white hover:bg-coral-hover text-xs font-medium">
+          Refresh now
+        </button>
+      </div>
+    </div>
+    {% if last_run and (last_run.actual_to or last_run.error) %}
+      {% if last_run.status == 'error' %}
+      <div class="bg-red-50 text-red-800 text-xs text-center py-1 border-t border-red-200 flex items-center justify-center gap-3">
+        <span>Last refresh failed at {{ last_run.finished_at or last_run.started_at }} · {{ last_run.error|truncate(180, True) }}</span>
+        <button type="button" x-data x-on:click="$dispatch('retry-refresh')"
+                class="px-2 py-0.5 rounded-chip bg-red-700 text-white text-xs hover:bg-red-800">Retry</button>
+      </div>
+      <script>
+        document.addEventListener('retry-refresh', async () => {
+          try { await fetch('{{ url_for("api_refresh") }}', { method: 'POST' }); location.reload(); }
+          catch { alert('Retry failed — check logs.'); }
+        });
+      </script>
+      {% else %}
+      <a href="{{ url_for('config_page', tab='runs') }}"
+         class="block bg-coral-subtle text-coral-deep text-xs text-center py-1 hover:bg-coral-soft transition-colors"
+         aria-label="View refresh history">
+        Data current through <strong class="tnum">{{ last_run.actual_to }}</strong>
+        · last refresh: <span class="tnum">{{ last_run.finished_at or last_run.started_at }}</span>
+        · {{ last_run.kind }} · kept <span class="tnum">{{ last_run.events_kept or 0 }}</span> events
+        {% if last_run.fallback_hops %}<span class="ml-2">(fallback hops: {{ last_run.fallback_hops }})</span>{% endif %}
+        <span class="opacity-60 ml-1">↗</span>
+      </a>
+      {% endif %}
+    {% endif %}
+    <!-- Window-context banner — answers "what timeframe is this?" for first-time viewers -->
+    <div class="bg-surf-50 border-b border-surf-200 text-[11px] text-ink-600 text-center py-1">
+      <span class="uppercase tracking-wide text-ink-400">Window:</span>
+      <strong class="text-ink-900">last {{ global_day_window }} IST days</strong>
+      · <span class="tnum">{{ global_window_from.strftime('%a %d %b') }}</span>
+      → <span class="tnum">{{ global_window_to.strftime('%a %d %b') }}</span>
+      <span class="ml-3 text-ink-400">Editable in
+        <a href="{{ url_for('config_page', tab='settings') }}" class="underline hover:text-coral-deep">Settings</a>
+      </span>
+    </div>
+  </header>
+
+  <main class="max-w-[1440px] mx-auto px-6 py-6">
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+      <div class="mb-4 space-y-2">
+        {% for cat, m in msgs %}
+        <div class="px-4 py-2 rounded-card border text-sm
+             {% if cat == 'error' %}border-red-300 bg-red-50 text-red-800
+             {% else %}border-surf-200 bg-surf-50 text-ink-900{% endif %}">
+          {{ m }}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="max-w-[1440px] mx-auto px-6 py-6 text-xs text-ink-400">
+    Internal · Hawky.ai · {{ ist_now.strftime('%Y-%m-%d %H:%M') }} IST
+  </footer>
+
+  <script>
+    function refreshChip() {
+      return {
+        status: '',
+        async trigger() {
+          this.status = 'starting refresh…';
+          try {
+            const r = await fetch('{{ url_for("api_refresh") }}', { method: 'POST' });
+            if (!r.ok) throw new Error('http ' + r.status);
+            this.status = 'fetching (≈50s)…';
+            // Poll /api/refresh-status until the run completes, then reload.
+            const start = Date.now();
+            const poll = async () => {
+              if (Date.now() - start > 180000) { this.status = 'timed out · reload to check'; return; }
+              try {
+                const j = await fetch('{{ url_for("api_refresh_status") }}').then(r => r.json());
+                if (j && (j.status === 'ok' || j.status === 'error')) {
+                  const fin = (j.finished_at || '').slice(11, 19);
+                  // Only treat as done if the run finished AFTER we kicked it off.
+                  const finishedTs = new Date((j.finished_at || '').replace(' ', 'T') + 'Z').getTime();
+                  if (!isNaN(finishedTs) && finishedTs > start - 5000) {
+                    this.status = (j.status === 'ok' ? '✓ ' + fin : '✗ failed') + ' · reloading';
+                    setTimeout(() => location.reload(), 700);
+                    return;
+                  }
+                }
+              } catch {}
+              setTimeout(poll, 3000);
+            };
+            poll();
+          } catch (e) {
+            this.status = 'error — see logs';
+          }
+        },
+        async snapshot() {
+          const label = prompt('Snapshot label (optional):', '');
+          if (label === null) return;
+          this.status = 'snapshotting…';
+          try {
+            const fd = new FormData();
+            if (label) fd.set('label', label);
+            const r = await fetch('{{ url_for("api_snapshot") }}', { method: 'POST', body: fd });
+            if (!r.ok) throw new Error('http ' + r.status);
+            const body = await r.json();
+            this.status = `✓ snapshot #${body.snapshot_id} saved`;
+            setTimeout(() => location.assign('{{ url_for("compare_page") }}?mode=snapshots'), 1200);
+          } catch (e) {
+            this.status = 'error — see logs';
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>

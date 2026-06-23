@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Creative Production · Hawky{% endblock %}
+
+{% macro sortth(col, label, align='right', cls='') %}
+<th class="px-3 py-2 text-{{ align }} {{ cls }}">
+  <a href="{{ sort_urls[col] }}"
+     class="hover:text-coral-deep {% if f.sort == col %}text-coral-deep font-semibold{% endif %}">
+    {{ label }}{% if f.sort == col %} <span aria-hidden="true">{{ '↑' if f.dir == 'asc' else '↓' }}</span>{% endif %}
+  </a>
+</th>
+{% endmacro %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {% if not last_sync or last_sync.status == 'error' %}
+  <div class="rounded-card border border-amber-300 bg-amber-50 text-amber-800 text-sm px-4 py-2">
+    {% if not last_sync %}
+      Creatives data hasn’t synced yet — counts may be empty. The first sync runs shortly after startup, or trigger it from <a href="{{ url_for('config_page', tab='runs') }}" class="underline">Config → Run log</a>.
+    {% else %}
+      ⚠ The latest creatives sync failed ({{ (last_sync.finished_at or last_sync.started_at)[:16] }}). Showing the last good data — re-run from <a href="{{ url_for('config_page', tab='runs') }}" class="underline">Config → Run log</a>.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <header class="space-y-1">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <h1 class="text-2xl font-semibold">Creative production</h1>
+      <div class="flex items-center gap-2 text-[11px]">
+        {% if cards.coverage is not none %}
+        <span class="px-2 py-0.5 rounded-chip bg-surf-100 text-ink-600 tnum"
+              title="Share of non-agent creatives that carry a known creator email. Climbs as upstream logging improves.">
+          creator coverage {{ cards.coverage }}%
+        </span>
+        {% endif %}
+        {% if last_sync and last_sync.finished_at %}
+        <span class="px-2 py-0.5 rounded-chip {% if last_sync.status == 'error' %}bg-red-50 text-red-700{% else %}bg-surf-100 text-ink-600{% endif %} tnum">
+          data as of {{ last_sync.finished_at[:16] }}{% if last_sync.status == 'error' %} · sync failed{% endif %}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <p class="text-sm text-ink-600">
+      Creatives <strong>generated</strong> on the platform, {{ f.date_from }} → {{ f.date_to }} (IST).
+      Counts <strong>every generation</strong>, including re-generations of the same cell — so totals reflect
+      generation <em>volume</em>, not the number of final assets living in a table.
+      Creator split: <strong>Brand</strong> (self-serve) · <strong>Hawky</strong> (internal team) ·
+      <strong>Agent</strong> (automated, no human) · <strong>Unattributed</strong> (no creator captured).
+    </p>
+  </header>
+
+  <!-- KPI cards -->
+  {% include '_creatives_cards.html' %}
+
+  <!-- Filters -->
+  <section class="rounded-card border border-surf-200 bg-surf-50 p-4">
+    {% set action_url = url_for('creatives_page') %}
+    {% set search_label = 'Search brands' %}
+    {% set search_placeholder = 'Brand name or id…' %}
+    {% include '_creatives_filters.html' %}
+  </section>
+
+  <!-- Brand table -->
+  <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+    <div class="px-5 py-3 border-b border-surf-200 flex items-center justify-between flex-wrap gap-3">
+      <h2 class="font-semibold">Brand overview · {{ rows|length }} brand{{ '' if rows|length == 1 else 's' }}</h2>
+      <div class="flex items-center gap-4 flex-wrap">
+        <div class="flex items-center gap-3 text-[11px] text-ink-400">
+          <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-coral"></span>Brand</span>
+          <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-coral-warm"></span>Hawky</span>
+          <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-ink-400"></span>Agent</span>
+          <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm bg-surf-200"></span>Unattributed</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="copy-feedback" class="text-xs text-coral-deep tnum" aria-live="polite"></span>
+          <button type="button" id="copy-creatives-csv"
+                  class="px-3 py-1.5 rounded-card border border-coral text-coral-deep hover:bg-coral-subtle text-xs font-medium">
+            Copy as CSV
+          </button>
+        </div>
+      </div>
+    </div>
+    {% if rows %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            {{ sortth('brand', 'Brand', 'left') }}
+            {{ sortth('total', 'Total') }}
+            {{ sortth('copilot', 'Co-Pilot') }}
+            {{ sortth('production_table', 'Prod. Table') }}
+            {{ sortth('creative_agent', 'Creative Agent') }}
+            {% if show_other %}<th class="px-3 py-2 text-right">Other</th>{% endif %}
+            {{ sortth('brand_made', 'Brand-made') }}
+            {{ sortth('hawky_made', 'Hawky-made') }}
+            {{ sortth('agent_made', 'Agent-made') }}
+            <th class="px-3 py-2 text-left">Brand vs Hawky</th>
+            {{ sortth('last_activity', 'Last activity') }}
+          </tr>
+        </thead>
+        <tbody id="creatives-tbody">
+          {% for r in rows %}
+          <tr class="border-t border-surf-200 hover:bg-surf-50"
+              role="link" tabindex="0"
+              data-row="{{ [r.brand_id, r.brand_name, r.total, r.src_copilot, r.src_production_table, r.src_creative_agent, r.src_other, r.ct_brand, r.ct_hawky, r.ct_agent, r.ct_unattributed, (r.last_activity[:16] if r.last_activity else '')]|tojson|forceescape }}"
+              aria-label="Open creative breakdown for {{ r.brand_name }}"
+              onclick="if(event.target.tagName!=='A') window.location='{{ url_for('creatives_brand_page', brand_id=r.brand_id, **f.nav_qs) }}'"
+              onkeydown="if((event.key==='Enter'||event.key===' ')&&event.target.tagName!=='A'){event.preventDefault();window.location='{{ url_for('creatives_brand_page', brand_id=r.brand_id, **f.nav_qs) }}'}">
+            <td class="px-3 py-2 align-middle">
+              <div class="font-medium flex items-center gap-2">
+                {{ r.brand_name }}{% if r.instance_label %}<span class="text-ink-400 text-xs">· {{ r.instance_label }}</span>{% endif %}
+                {% if not r.is_on_roster %}<span class="px-1.5 py-0.5 rounded-chip bg-surf-100 text-ink-400 text-[10px] uppercase tracking-wide">off-roster</span>{% endif %}
+              </div>
+              <div class="text-[11px] text-ink-400 font-mono">{{ r.brand_id }}</div>
+            </td>
+            <td class="px-3 py-2 align-middle text-right tnum font-semibold {% if not r.total %}text-ink-400{% endif %}">{{ r.total }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not r.src_copilot %}text-ink-400{% endif %}">{{ r.src_copilot }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not r.src_production_table %}text-ink-400{% endif %}">{{ r.src_production_table }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not r.src_creative_agent %}text-ink-400{% endif %}">{{ r.src_creative_agent }}</td>
+            {% if show_other %}<td class="px-3 py-2 align-middle text-right tnum {% if not r.src_other %}text-ink-400{% endif %}">{{ r.src_other }}</td>{% endif %}
+            <td class="px-3 py-2 align-middle text-right tnum {% if not r.ct_brand %}text-ink-400{% endif %}">{{ r.ct_brand }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not r.ct_hawky %}text-ink-400{% endif %}">{{ r.ct_hawky }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not r.ct_agent %}text-ink-400{% endif %}">{{ r.ct_agent }}</td>
+            <td class="px-3 py-2 align-middle">
+              {% if r.total %}
+              <div class="flex h-2 w-28 rounded-chip overflow-hidden bg-surf-100"
+                   role="img"
+                   aria-label="Brand {{ r.ct_brand }}, Hawky {{ r.ct_hawky }}, Agent {{ r.ct_agent }}, Unattributed {{ r.ct_unattributed }}"
+                   title="Brand {{ r.ct_brand }} · Hawky {{ r.ct_hawky }} · Agent {{ r.ct_agent }} · Unattributed {{ r.ct_unattributed }}">
+                <div class="bg-coral" style="width: {{ r.brand_pct }}%"></div>
+                <div class="bg-coral-warm" style="width: {{ r.hawky_pct }}%"></div>
+                <div class="bg-ink-400" style="width: {{ r.agent_pct }}%"></div>
+                <div class="bg-surf-200" style="width: {{ r.unattr_pct }}%"></div>
+              </div>
+              {% else %}<span class="text-ink-400 text-xs">—</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 align-middle text-right text-xs tnum text-ink-600 whitespace-nowrap">{{ r.last_activity[:16] if r.last_activity else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-10 text-center text-ink-400 text-sm">No brands match these filters.</div>
+    {% endif %}
+  </section>
+</div>
+
+<script>
+  document.getElementById('copy-creatives-csv')?.addEventListener('click', async () => {
+    const header = ['brand_id','brand','total','copilot','production_table','creative_agent','other','brand_made','hawky_made','agent_made','unattributed','last_activity'];
+    const csvField = (s) => {
+      const v = (s ?? '').toString();
+      return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    };
+    const lines = [header.join(',')];
+    let n = 0;
+    for (const tr of document.querySelectorAll('#creatives-tbody tr[data-row]')) {
+      const cells = JSON.parse(tr.dataset.row);
+      lines.push(cells.map(csvField).join(','));
+      n++;
+    }
+    const csv = lines.join('\n');
+    const fb = document.getElementById('copy-feedback');
+    try {
+      await navigator.clipboard.writeText(csv);
+      fb.textContent = `✓ Copied ${n} rows`;
+    } catch (err) {
+      const ta = document.createElement('textarea');
+      ta.value = csv; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      fb.textContent = `✓ Copied (fallback) ${n} rows`;
+    }
+    setTimeout(() => { fb.textContent = ''; }, 2500);
+  });
+</script>
+{% endblock %}

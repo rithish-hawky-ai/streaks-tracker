@@ -1,0 +1,24 @@
+{# Shared sortable-column header. Caller computes href so it can use its own
+   url_for endpoint and param names.
+
+   Args:
+     label     — display text
+     key       — sort key
+     is_active — bool, true if this column is the active sort
+     dir       — 'asc' | 'desc' (current direction when is_active)
+     href      — pre-computed link URL to flip the sort
+     align     — 'left' | 'right' (default 'right' since most sortable columns are numeric)
+
+   Usage:
+     {% from "_partials/sort_header.html" import sort_th %}
+     {% set new_dir = 'asc' if (f_sort == 'events' and f_dir == 'desc') else 'desc' %}
+     {{ sort_th('Events', 'events', f_sort == 'events', f_dir,
+                url_for('index', sort='events', dir=new_dir, q=f_q)) }}
+#}
+{% macro sort_th(label, key, is_active, dir, href, align='right') -%}
+  {%- set aria = 'ascending' if (is_active and dir == 'asc') else ('descending' if is_active else 'none') -%}
+  <th class="px-4 py-2 font-medium text-{{ align }}" aria-sort="{{ aria }}">
+    <a class="hover:text-coral-deep {% if is_active %}text-coral-deep{% endif %}"
+       href="{{ href }}">{{ label }}{% if is_active %} {% if dir == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a>
+  </th>
+{%- endmacro %}

@@ -1,0 +1,83 @@
+{# Shared global filter bar for both creative screens.
+   Expects in context: f (filter dict), action_url, clear_urls, source_labels,
+   and optionally search_label / search_placeholder. #}
+<form method="get" action="{{ action_url }}"
+      class="flex flex-wrap items-end gap-3"
+      x-data="{ range: '{{ f.range }}' }">
+  <label class="flex flex-col gap-1">
+    <span class="uppercase tracking-wide text-[11px] text-ink-400">Date range</span>
+    <select name="range" x-model="range"
+            class="rounded-card border border-surf-200 px-3 py-1.5 text-sm bg-white">
+      <option value="7d"     {{ 'selected' if f.range == '7d' }}>Last 7 days</option>
+      <option value="30d"    {{ 'selected' if f.range == '30d' }}>Last 30 days</option>
+      <option value="90d"    {{ 'selected' if f.range == '90d' }}>Last 90 days</option>
+      <option value="month"  {{ 'selected' if f.range == 'month' }}>This month</option>
+      <option value="custom" {{ 'selected' if f.range == 'custom' }}>Custom…</option>
+    </select>
+  </label>
+
+  <div class="flex items-end gap-2" x-show="range === 'custom'" x-cloak>
+    <label class="flex flex-col gap-1">
+      <span class="uppercase tracking-wide text-[11px] text-ink-400">From</span>
+      <input type="date" name="from" value="{{ f.date_from.isoformat() }}"
+             class="rounded-card border border-surf-200 px-3 py-1.5 text-sm">
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="uppercase tracking-wide text-[11px] text-ink-400">To</span>
+      <input type="date" name="to" value="{{ f.date_to.isoformat() }}"
+             class="rounded-card border border-surf-200 px-3 py-1.5 text-sm">
+    </label>
+  </div>
+
+  <label class="flex flex-col gap-1">
+    <span class="uppercase tracking-wide text-[11px] text-ink-400">Source</span>
+    <select name="source" class="rounded-card border border-surf-200 px-3 py-1.5 text-sm bg-white">
+      <option value="">All</option>
+      <option value="copilot"          {{ 'selected' if f.source_token == 'copilot' }}>Co-Pilot</option>
+      <option value="production_table" {{ 'selected' if f.source_token == 'production_table' }}>Production Table</option>
+      <option value="creative_agent"   {{ 'selected' if f.source_token == 'creative_agent' }}>Creative Agent</option>
+      <option value="other"            {{ 'selected' if f.source_token == 'other' }}>Other</option>
+    </select>
+  </label>
+
+  <label class="flex flex-col gap-1">
+    <span class="uppercase tracking-wide text-[11px] text-ink-400">Creator</span>
+    <select name="creator" class="rounded-card border border-surf-200 px-3 py-1.5 text-sm bg-white">
+      <option value="">All</option>
+      <option value="brand"        {{ 'selected' if f.creator_token == 'brand' }}>Brand users</option>
+      <option value="hawky"        {{ 'selected' if f.creator_token == 'hawky' }}>Hawky team</option>
+      <option value="agent"        {{ 'selected' if f.creator_token == 'agent' }}>Agent (auto)</option>
+      <option value="unattributed" {{ 'selected' if f.creator_token == 'unattributed' }}>Unattributed</option>
+    </select>
+  </label>
+
+  <label class="flex flex-col gap-1 flex-1 min-w-[180px]">
+    <span class="uppercase tracking-wide text-[11px] text-ink-400">{{ search_label or 'Search' }}</span>
+    <input type="text" name="q" value="{{ f.q }}" placeholder="{{ search_placeholder or 'Search…' }}"
+           class="rounded-card border border-surf-200 px-3 py-1.5 text-sm">
+  </label>
+
+  {% if f.sort and f.sort != 'total' %}<input type="hidden" name="sort" value="{{ f.sort }}">{% endif %}
+  {% if f.dir == 'asc' %}<input type="hidden" name="dir" value="asc">{% endif %}
+
+  <button type="submit"
+          class="px-4 py-1.5 rounded-card bg-coral text-white hover:bg-coral-hover text-sm font-medium">Apply</button>
+</form>
+
+{% if f.source_token or f.creator_token or f.q %}
+<div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
+  <span class="text-ink-400">Active filters:</span>
+  {% if f.source_token %}
+    <a href="{{ clear_urls.source }}" class="px-2 py-0.5 rounded-chip bg-coral-subtle text-coral-deep hover:bg-coral-soft">
+      Source: {{ source_labels[f.source] }} ✕</a>
+  {% endif %}
+  {% if f.creator_token %}
+    <a href="{{ clear_urls.creator }}" class="px-2 py-0.5 rounded-chip bg-coral-subtle text-coral-deep hover:bg-coral-soft">
+      Creator: {{ f.creator_token|capitalize }} ✕</a>
+  {% endif %}
+  {% if f.q %}
+    <a href="{{ clear_urls.q }}" class="px-2 py-0.5 rounded-chip bg-surf-100 text-ink-600 hover:bg-surf-200">
+      “{{ f.q }}” ✕</a>
+  {% endif %}
+</div>
+{% endif %}

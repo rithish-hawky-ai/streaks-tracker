@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}{{ brand.brand_name }} · Creative Production · Hawky{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {% if not last_sync or last_sync.status == 'error' %}
+  <div class="rounded-card border border-amber-300 bg-amber-50 text-amber-800 text-sm px-4 py-2">
+    {% if not last_sync %}
+      Creatives data hasn’t synced yet — counts may be empty. Trigger it from <a href="{{ url_for('config_page', tab='runs') }}" class="underline">Config → Run log</a>.
+    {% else %}
+      ⚠ The latest creatives sync failed ({{ (last_sync.finished_at or last_sync.started_at)[:16] }}). Showing the last good data — re-run from <a href="{{ url_for('config_page', tab='runs') }}" class="underline">Config → Run log</a>.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Breadcrumb + hero -->
+  <header class="space-y-1">
+    <a href="{{ back_url }}" class="text-sm text-ink-600 hover:text-coral-deep">← All brands</a>
+    <div class="flex items-center gap-3 flex-wrap">
+      <h1 class="text-2xl font-semibold">{{ brand.brand_name }}</h1>
+      {% if not brand.is_on_roster %}
+      <span class="px-1.5 py-0.5 rounded-chip bg-surf-100 text-ink-400 text-[10px] uppercase tracking-wide">off-roster</span>
+      {% endif %}
+    </div>
+    <div class="text-xs text-ink-400 font-mono">{{ brand.brand_id }}</div>
+    <p class="text-sm text-ink-600">
+      {{ f.date_from }} → {{ f.date_to }} (IST)
+      {% if cards.coverage is not none %} · creator coverage <strong class="tnum">{{ cards.coverage }}%</strong>{% endif %}
+      {% if last_sync and last_sync.finished_at %} · data as of <span class="tnum">{{ last_sync.finished_at[:16] }}</span>{% endif %}
+    </p>
+  </header>
+
+  <!-- Scoped KPI cards -->
+  {% include '_creatives_cards.html' %}
+
+  <!-- Filters -->
+  <section class="rounded-card border border-surf-200 bg-surf-50 p-4">
+    {% set action_url = url_for('creatives_brand_page', brand_id=brand.brand_id) %}
+    {% set search_label = 'Search users' %}
+    {% set search_placeholder = 'Email…' %}
+    {% include '_creatives_filters.html' %}
+  </section>
+
+  <!-- User-level breakdown -->
+  <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+    <div class="px-5 py-3 border-b border-surf-200">
+      <h2 class="font-semibold">User-level breakdown · {{ users|length }} creator{{ '' if users|length == 1 else 's' }}</h2>
+      <p class="text-xs text-ink-400 mt-0.5">Counts are creatives <strong>generated</strong> (every generation, incl. re-generations of a cell). Agent-made creatives are summarised separately below. Click “View tables” to see each table’s generation count and how it spread over time.</p>
+    </div>
+    {% if users %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            <th class="px-3 py-2">User</th>
+            <th class="px-3 py-2">Type</th>
+            <th class="px-3 py-2 text-right">Total</th>
+            <th class="px-3 py-2 text-right">Co-Pilot</th>
+            <th class="px-3 py-2 text-right">Prod. Table</th>
+            <th class="px-3 py-2 text-right">Creative Agent</th>
+            {% if show_other %}<th class="px-3 py-2 text-right">Other</th>{% endif %}
+            <th class="px-3 py-2">Production tables</th>
+            <th class="px-3 py-2 text-right">Last active</th>
+          </tr>
+        </thead>
+        {% for u in users %}
+        <tbody x-data="{ open: false }" class="border-t border-surf-200">
+          <tr class="hover:bg-surf-50">
+            <td class="px-3 py-2 align-middle">
+              {% if u.email %}<span class="font-medium">{{ u.email }}</span>
+              {% else %}<span class="italic text-ink-400">(unattributed)</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 align-middle">
+              {% if u.creator_type == 'HAWKY' %}
+                <span class="px-2 py-0.5 rounded-chip bg-coral text-white text-[11px] font-medium">HAWKY</span>
+              {% elif u.creator_type == 'BRAND' %}
+                <span class="px-2 py-0.5 rounded-chip bg-coral-subtle text-coral-deep text-[11px] font-medium">BRAND</span>
+              {% else %}
+                <span class="px-2 py-0.5 rounded-chip bg-surf-100 text-ink-600 text-[11px] font-medium">UNATTRIBUTED</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 align-middle text-right tnum font-semibold">{{ u.total }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not u.src_copilot %}text-ink-400{% endif %}">{{ u.src_copilot }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not u.src_production_table %}text-ink-400{% endif %}">{{ u.src_production_table }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not u.src_creative_agent %}text-ink-400{% endif %}">{{ u.src_creative_agent }}</td>
+            {% if show_other %}<td class="px-3 py-2 align-middle text-right tnum {% if not u.src_other %}text-ink-400{% endif %}">{{ u.src_other }}</td>{% endif %}
+            <td class="px-3 py-2 align-middle">
+              {% if u.tables %}
+              <button type="button" @click="open = !open"
+                      class="text-coral-deep hover:underline text-xs font-medium">
+                <span x-show="!open">View {{ u.tables|length }} table{{ '' if u.tables|length == 1 else 's' }} →</span>
+                <span x-show="open" x-cloak>Hide tables ↑</span>
+              </button>
+              {% else %}
+              <span class="text-ink-400 text-xs">No tables</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 align-middle text-right text-xs tnum text-ink-600 whitespace-nowrap">{{ u.last_active[:16] if u.last_active else '—' }}</td>
+          </tr>
+          {% if u.tables %}
+          <tr x-show="open" x-cloak class="bg-surf-50">
+            <td colspan="{{ 9 if show_other else 8 }}" class="px-3 pb-3">
+              <ul class="space-y-1 pt-1">
+                {% for t in u.tables %}
+                <li class="text-sm">
+                  <a href="{{ product_base_url }}/app/production/{{ brand.brand_id }}/{{ t.table_id }}"
+                     target="_blank" rel="noopener" class="text-coral-deep hover:underline">
+                    {{ t.table_name or t.table_id }} ↗
+                  </a>
+                  <span class="text-ink-400 tnum text-xs">· {{ t.n }} generation{{ '' if t.n == 1 else 's' }}</span>
+                  {% if t.days and t.first and t.last %}
+                  <span class="text-ink-400 tnum text-xs"
+                        title="Generations were spread across {{ t.days }} active day(s) — re-generations of the same cells inflate the count above the number of final images in the table.">
+                    · {{ t.days }} day{{ '' if t.days == 1 else 's' }}{% if t.first[:10] != t.last[:10] %} ({{ t.first[:10] }} → {{ t.last[:10] }}){% else %} ({{ t.first[:10] }}){% endif %}
+                  </span>
+                  {% endif %}
+                  <span class="text-ink-400 font-mono text-[11px]">· {{ t.table_id }}</span>
+                </li>
+                {% endfor %}
+              </ul>
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+        {% endfor %}
+      </table>
+    </div>
+    {% else %}
+    <div class="p-10 text-center text-ink-400 text-sm">No human creators for this brand in the selected window.</div>
+    {% endif %}
+  </section>
+
+  <!-- Agents breakdown -->
+  {% if agents %}
+  <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+    <div class="px-5 py-3 border-b border-surf-200">
+      <h2 class="font-semibold">Agents · automated production</h2>
+      <p class="text-xs text-ink-400 mt-0.5">Creatives made by Creative Production Agents (no human in the loop). “Runs” = distinct agent run sessions.</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            <th class="px-3 py-2">Agent</th>
+            <th class="px-3 py-2 text-right">Runs</th>
+            <th class="px-3 py-2 text-right">Creatives</th>
+            <th class="px-3 py-2 text-right">Avg / run</th>
+            <th class="px-3 py-2 text-right">Tables</th>
+            <th class="px-3 py-2 text-right">Last run</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in agents %}
+          <tr class="border-t border-surf-200 hover:bg-surf-50">
+            <td class="px-3 py-2 align-middle">
+              <div class="font-medium">{{ a.agent_name }}</div>
+              <div class="text-[11px] text-ink-400 font-mono">{{ a.agent_id }}</div>
+            </td>
+            <td class="px-3 py-2 align-middle text-right tnum">{{ a.runs }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum font-semibold">{{ a.creatives }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum">{{ a.per_run }}</td>
+            <td class="px-3 py-2 align-middle text-right tnum {% if not a.tables %}text-ink-400{% endif %}">{{ a.tables }}</td>
+            <td class="px-3 py-2 align-middle text-right text-xs tnum text-ink-600 whitespace-nowrap">{{ a.last_run[:16] if a.last_run else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

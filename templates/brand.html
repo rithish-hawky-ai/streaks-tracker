@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+{% from "_partials/sort_header.html" import sort_th %}
+{% block head %}
+{% if tab == 'overview' %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.1/dist/apexcharts.min.js"></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="space-y-6">
+
+  <nav class="text-xs text-ink-600" aria-label="Breadcrumb">
+    <a href="{{ back_url }}" class="hover:text-coral-deep">← Back to list</a>
+  </nav>
+
+  <!-- Hero -->
+  <section class="rounded-card border border-surf-200 bg-white p-5">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap mb-1">
+          {% if brand.agency %}<span class="px-2 py-0.5 rounded-chip bg-surf-100 text-[11px] text-ink-600">{{ brand.agency }}</span>{% endif %}
+          {% if brand.parent_company %}<span class="px-2 py-0.5 rounded-chip border border-surf-200 text-[11px] text-ink-600 italic">↳ {{ brand.parent_company }}</span>{% endif %}
+          {% if not brand.agency and not brand.parent_company %}<span class="text-[11px] text-ink-400">direct</span>{% endif %}
+        </div>
+        <h1 class="text-2xl font-semibold truncate">{{ brand.brand_name }}{% if brand.instance_label %} <span class="text-ink-400 text-base font-normal">· {{ brand.instance_label }}</span>{% endif %}</h1>
+        <div class="text-xs text-ink-400 font-mono mt-1">{{ brand.brand_id }}</div>
+      </div>
+      <div class="flex items-center gap-4">
+        {% if row %}
+        <div class="text-right">
+          <div class="text-[11px] uppercase tracking-wide text-ink-400">Streak</div>
+          <div class="text-3xl font-semibold tnum {% if row.streak >= 5 %}text-coral-deep{% elif row.streak == 0 %}text-ink-400{% endif %}">{{ row.streak }}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[11px] uppercase tracking-wide text-ink-400">Events {{ day_window }}d</div>
+          <div class="text-3xl font-semibold tnum">{{ row.events_total }}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[11px] uppercase tracking-wide text-ink-400">Users {{ day_window }}d</div>
+          <div class="text-3xl font-semibold tnum">{{ row.users_total }}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[11px] uppercase tracking-wide text-ink-400">Last active</div>
+          <div class="text-base font-semibold tnum">{{ row.last_active or '—' }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <!-- Tabs -->
+  <nav role="tablist" aria-label="Brand sections" class="flex items-center gap-1 border-b border-surf-200 overflow-x-auto">
+    {% for t in tabs %}
+    <a role="tab" aria-selected="{{ 'true' if t == tab else 'false' }}"
+       href="{{ tab_urls[t] }}"
+       class="px-4 py-2 -mb-px border-b-2 text-sm whitespace-nowrap
+       {% if t == tab %}border-coral text-coral-deep font-semibold{% else %}border-transparent text-ink-600 font-medium hover:text-coral-deep{% endif %}">
+       {{ t.title() }}
+    </a>
+    {% endfor %}
+  </nav>
+
+  {# ---------------------------------------------------------- OVERVIEW #}
+  {% if tab == 'overview' %}
+    <section class="rounded-card border border-surf-200 bg-white p-5">
+      <div class="flex items-center justify-between mb-3 gap-3">
+        <h2 class="font-semibold">Activity · last {{ day_window }} days (IST)</h2>
+        <p class="text-xs text-ink-400">Striped = weekend (never breaks a streak). Coral ring = today. Hover any block for the date.</p>
+      </div>
+      <div class="flex gap-[3px] flex-wrap">
+        {% for c in row.day_cells %}
+          <span class="tip-host w-5 h-7 rounded-[2px] block
+               {%- if c.is_weekend %} stripe-weekend
+               {%- elif c.events == 0 %} bg-surf-100
+               {%- elif c.events < 5 %} bg-coral-subtle
+               {%- elif c.events < 20 %} bg-coral-soft
+               {%- elif c.events < 60 %} bg-coral-warm
+               {%- else %} bg-coral
+               {%- endif -%}
+               {%- if c.is_today %} ring-2 ring-coral ring-offset-1{%- endif -%}"
+               data-tip="{{ c.tip }}"></span>
+        {% endfor %}
+      </div>
+      <div class="flex justify-between text-[11px] text-ink-400 mt-1 tnum">
+        <span>{{ days[0].isoformat() }}</span>
+        <span>today: {{ days[-1].isoformat() }}</span>
+      </div>
+    </section>
+
+    <!-- Module use — Co-Pilot card flipped to show messages-sent as headline -->
+    <section class="rounded-card border border-surf-200 bg-white p-5">
+      <div class="flex items-center justify-between mb-3 gap-3">
+        <h2 class="font-semibold">Module use · last {{ day_window }} days</h2>
+        <p class="text-xs text-ink-400">Click any card to drill into the Sections breakdown.</p>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {% for m in modules %}
+        {% set v = row.modules.get(m, 0) %}
+        {% set anchor = m|replace(' ', '_')|replace('+', '_') %}
+        <a href="{{ tab_urls.sections }}#mod-{{ anchor }}"
+           class="rounded-card border {% if m == 'Co-Pilot' %}border-coral bg-coral-subtle{% else %}border-surf-200{% endif %} p-3 hover:border-coral hover:bg-coral-subtle transition-colors block">
+          {% if m == 'Co-Pilot' %}
+            <div class="text-[11px] uppercase tracking-wide text-coral-deep">Co-Pilot · messages sent ★</div>
+            <div class="text-3xl font-semibold tnum mt-1 text-coral-deep">{{ copilot_msgs.events }}</div>
+            <div class="text-[11px] mt-2 pt-2 border-t border-coral text-coral-deep">
+              <span class="tnum">{{ copilot_msgs.users }}</span> user{{ '' if copilot_msgs.users == 1 else 's' }}
+              · last <span class="tnum">{{ copilot_msgs.last_sent[:16] if copilot_msgs.last_sent else '—' }}</span>
+            </div>
+            <div class="text-[10px] text-coral-deep/70 mt-1">of <span class="tnum">{{ v }}</span> total Co-Pilot events (toggles, history opens, etc.)</div>
+          {% else %}
+            {% set meta = (module_meta or {}).get(m, {'users': 0, 'last_seen': None}) %}
+            <div class="text-[11px] uppercase tracking-wide text-ink-400">{{ m }}</div>
+            <div class="text-2xl font-semibold tnum mt-1 {% if v == 0 %}text-ink-400{% endif %}">{{ v }}</div>
+            <div class="text-[11px] mt-2 pt-2 border-t border-surf-200 text-ink-600">
+              <span class="tnum {% if meta.users == 0 %}text-ink-400{% endif %}">{{ meta.users }}</span> user{{ '' if meta.users == 1 else 's' }}
+              · last <span class="tnum">{{ meta.last_seen[:16] if meta.last_seen else '—' }}</span>
+            </div>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      <p class="text-xs text-ink-400 mt-3">★ <code class="font-mono">{{ msg_event }}</code> events — the canonical Co-Pilot adoption signal. Co-Pilot double-counts: also credited to the page module the user was on.</p>
+    </section>
+
+    <!-- Trends merged into Overview: events/day with metric dropdown + module mix -->
+    {% if chart_trend %}
+    <section class="rounded-card border border-surf-200 bg-white">
+      <div class="px-5 py-3 border-b border-surf-200 flex items-center justify-between gap-3 flex-wrap">
+        <h2 class="font-semibold">Per day <span class="text-xs text-ink-400 font-normal">· last {{ day_window }} days (IST) · <span id="brand-metric-label">events / day</span></span></h2>
+        <label class="text-xs text-ink-600 flex items-center gap-2">
+          Metric
+          <select id="brand-metric" class="px-2 py-1 border border-surf-200 rounded-card bg-white text-xs">
+            <option value="events">Events</option>
+            <option value="copilot_messages">Co-Pilot messages sent</option>
+            <option value="copilot_users">Co-Pilot users</option>
+            <option value="users">Distinct users</option>
+            <option value="module_creative">Module: Creative Intel</option>
+            <option value="module_compet">Module: Competitive Intel</option>
+            <option value="module_prod">Module: Production+Playbooks</option>
+            <option value="module_copilot">Module: Co-Pilot</option>
+            <option value="module_agents">Module: Agents</option>
+          </select>
+        </label>
+      </div>
+      <div id="chart-brand-events" class="px-2 py-2"></div>
+    </section>
+    <section class="rounded-card border border-surf-200 bg-white">
+      <div class="px-5 py-3 border-b border-surf-200">
+        <h2 class="font-semibold">Module mix over time <span class="text-xs text-ink-400 font-normal">· Co-Pilot double-counts</span></h2>
+      </div>
+      <div id="chart-brand-modules" class="px-2 py-2"></div>
+    </section>
+
+    <script>
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const trend = {{ chart_trend | tojson }};
+      const moduleColors = {
+        'Creative Intel':       '#7C3AED',
+        'Competitive Intel':    '#0891B2',
+        'Production+Playbooks': '#0F766E',
+        'Co-Pilot':             '#E55A3F',
+        'Agents':               '#B45309',
+      };
+      document.addEventListener('DOMContentLoaded', () => {
+        const eventsChart = new ApexCharts(document.querySelector('#chart-brand-events'), {
+          chart: { type: 'area', height: 240, toolbar: { show: false }, animations: { enabled: !reduceMotion } },
+          series: [{ name: trend.metrics.events.label, data: trend.metrics.events.data }],
+          xaxis: { categories: trend.categories, type: 'datetime',
+                   labels: { datetimeFormatter: { day: 'dd MMM' }, style: { colors: '#52525B' } },
+                   axisBorder: { color: '#E4E4E7' }, axisTicks: { color: '#E4E4E7' } },
+          yaxis: { labels: { style: { colors: '#52525B' }, formatter: v => Math.round(v).toLocaleString() } },
+          grid: { borderColor: '#F4F4F5', strokeDashArray: 4 },
+          colors: ['#E55A3F'],
+          fill: { type: 'gradient', gradient: { opacityFrom: 0.45, opacityTo: 0.05 } },
+          stroke: { curve: 'smooth', width: 2 },
+          dataLabels: { enabled: false },
+          tooltip: { x: { format: 'ddd dd MMM yyyy' } },
+        });
+        eventsChart.render();
+
+        const metricSel = document.getElementById('brand-metric');
+        const metricLbl = document.getElementById('brand-metric-label');
+        metricSel.addEventListener('change', () => {
+          const m = trend.metrics[metricSel.value];
+          if (!m) return;
+          eventsChart.updateSeries([{ name: m.label, data: m.data }]);
+          metricLbl.textContent = m.label.toLowerCase() + ' / day';
+        });
+
+        const modSeries = ['Creative Intel','Competitive Intel','Production+Playbooks','Co-Pilot','Agents']
+          .map(m => ({ name: m, data: trend[m] }));
+        new ApexCharts(document.querySelector('#chart-brand-modules'), {
+          chart: { type: 'area', height: 280, stacked: true, toolbar: { show: false }, animations: { enabled: !reduceMotion } },
+          series: modSeries,
+          colors: modSeries.map(s => moduleColors[s.name]),
+          xaxis: { categories: trend.categories, type: 'datetime',
+                   labels: { datetimeFormatter: { day: 'dd MMM' }, style: { colors: '#52525B' } },
+                   axisBorder: { color: '#E4E4E7' }, axisTicks: { color: '#E4E4E7' } },
+          yaxis: { labels: { style: { colors: '#52525B' }, formatter: v => Math.round(v).toLocaleString() } },
+          grid: { borderColor: '#F4F4F5', strokeDashArray: 4 },
+          stroke: { curve: 'smooth', width: 1 },
+          fill: { type: 'solid', opacity: 0.7 },
+          legend: { position: 'bottom', labels: { colors: '#52525B' } },
+          dataLabels: { enabled: false },
+          tooltip: { x: { format: 'ddd dd MMM yyyy' }, shared: true },
+        }).render();
+      });
+    </script>
+    {% endif %}
+
+    {% if recent_events %}
+    <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+      <div class="px-5 py-3 border-b border-surf-200 flex items-center justify-between">
+        <h2 class="font-semibold">Most recent events</h2>
+        <p class="text-xs text-ink-400">Last 10 across the whole history we've stored. Click a user to see all their activity.</p>
+      </div>
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            <th class="px-4 py-2">When (IST)</th>
+            <th class="px-4 py-2">Event</th>
+            <th class="px-4 py-2">User</th>
+            <th class="px-4 py-2">Modules</th>
+            <th class="px-4 py-2">Page</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in recent_events %}
+          <tr class="border-t border-surf-200">
+            <td class="px-4 py-2 tnum text-xs whitespace-nowrap">{{ e.ist_ts[:19] }}</td>
+            <td class="px-4 py-2 font-medium">{{ e.event_name }}</td>
+            <td class="px-4 py-2 text-xs">
+              {% if e.email %}
+                <a href="{{ url_for('brand_page', brand_id=brand.brand_id, tab='users', uemail=e.email) }}"
+                   class="font-medium hover:text-coral-deep">{{ e.email }}</a>
+              {% else %}<span class="text-ink-400">—</span>{% endif %}<br>
+              <a href="{{ url_for('brand_page', brand_id=brand.brand_id, tab='users', udid=e.distinct_id) }}"
+                 class="font-mono text-ink-400 hover:text-coral-deep">{{ e.distinct_id or '—' }}</a>
+            </td>
+            <td class="px-4 py-2 text-xs">
+              {% for m in (e.modules or '').split(',') if m %}<span class="px-1.5 py-0.5 rounded-chip bg-surf-100 mr-1">{{ m }}</span>{% endfor %}
+            </td>
+            <td class="px-4 py-2 text-xs text-ink-600 truncate max-w-[400px]"><span class="tip-host" data-tip="{{ e.current_url }}">{{ e.current_url or '—' }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+  {% endif %}
+
+  {# ---------------------------------------------------------- USERS #}
+  {% if tab == 'users' %}
+    {% set users_active = u_filter_email or u_filter_did %}
+    <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+      <div class="px-5 py-3 border-b border-surf-200 flex items-center justify-between flex-wrap gap-2">
+        <h2 class="font-semibold">Users · last {{ day_window }} days <span class="text-xs text-ink-400 font-normal">({{ users|length }} distinct)</span></h2>
+        <p class="text-xs text-ink-400">Hawky-domain users already excluded. Active days = session-count proxy. Click any column header to sort.</p>
+      </div>
+      {% if users_active %}
+      <div class="px-5 py-2 border-b border-surf-200 bg-coral-subtle text-xs text-coral-deep flex items-center gap-2">
+        Filtered to user
+        {% if u_filter_email %}<code class="font-mono">{{ u_filter_email }}</code>{% endif %}
+        {% if u_filter_did %}<code class="font-mono">{{ u_filter_did }}</code>{% endif %}
+        <a href="{{ url_for('brand_page', brand_id=brand.brand_id, tab='users') }}"
+           class="ml-auto px-2 py-0.5 rounded-chip bg-white text-coral-deep">clear filter ✕</a>
+      </div>
+      {% endif %}
+      {% if users %}
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            {{ sort_th('Email',        'email',       u_sort == 'email',       u_dir, users_link('email'),       align='left') }}
+            <th class="px-4 py-2">Distinct ID</th>
+            {{ sort_th('Events',       'events',      u_sort == 'events',      u_dir, users_link('events')) }}
+            {{ sort_th('Active days',  'active_days', u_sort == 'active_days', u_dir, users_link('active_days')) }}
+            {{ sort_th('Pages',        'pages',       u_sort == 'pages',       u_dir, users_link('pages')) }}
+            <th class="px-4 py-2">Modules touched</th>
+            <th class="px-4 py-2">Activity ({{ day_window }}d)</th>
+            {{ sort_th('First seen',   'first_seen',  u_sort == 'first_seen',  u_dir, users_link('first_seen'),  align='left') }}
+            {{ sort_th('Last seen',    'last_seen',   u_sort == 'last_seen',   u_dir, users_link('last_seen'),   align='left') }}
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr class="border-t border-surf-200">
+            <td class="px-4 py-2">
+              {% if u.email %}<span class="font-medium">{{ u.email }}</span>{% else %}<span class="text-ink-400 italic text-xs">no profile email</span>{% endif %}
+            </td>
+            <td class="px-4 py-2 font-mono text-[11px] text-ink-400">{{ u.distinct_id or '—' }}</td>
+            <td class="px-4 py-2 text-right tnum">{{ u.events }}</td>
+            <td class="px-4 py-2 text-right tnum">{{ u.active_days }}</td>
+            <td class="px-4 py-2 text-right tnum">{{ u.pages_seen }}</td>
+            <td class="px-4 py-2">
+              <div class="flex flex-wrap gap-1">
+              {% for m in u.modules %}<span class="px-1.5 py-0.5 rounded-chip bg-surf-100 text-[11px] text-ink-600">{{ m }}</span>{% endfor %}
+              {% if not u.modules %}<span class="text-ink-400 text-xs">—</span>{% endif %}
+              </div>
+            </td>
+            <td class="px-4 py-2 align-middle">
+              {% if u.day_cells %}
+              <div class="flex gap-[2px]" role="img" aria-label="{{ day_window }}-day activity for {{ u.email or u.distinct_id }}">
+              {% for c in u.day_cells %}
+                <span class="tip-host w-3 h-5 rounded-[2px] shrink-0 block
+                     {%- if c.is_weekend %} stripe-weekend
+                     {%- elif c.events == 0 %} bg-surf-100
+                     {%- elif c.events < 5 %} bg-coral-subtle
+                     {%- elif c.events < 20 %} bg-coral-soft
+                     {%- elif c.events < 60 %} bg-coral-warm
+                     {%- else %} bg-coral
+                     {%- endif -%}
+                     {%- if c.is_today %} ring-2 ring-coral ring-offset-1{%- endif -%}"
+                     data-tip="{{ c.tip }}"></span>
+              {% endfor %}
+              </div>
+              {% else %}
+              <span class="text-ink-400 text-xs">—</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 text-xs tnum whitespace-nowrap">{{ u.first_seen[:16] if u.first_seen else '—' }}</td>
+            <td class="px-4 py-2 text-xs tnum whitespace-nowrap">{{ u.last_seen[:16] if u.last_seen else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <div class="p-10 text-center text-ink-400 text-sm">No users {% if users_active %}match this filter{% else %}in the {{ day_window }}-day window{% endif %}.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {# ---------------------------------------------------------- SECTIONS #}
+  {% if tab == 'sections' %}
+    {% set module_colors = {'Creative Intel': '#7C3AED', 'Competitive Intel': '#0891B2', 'Production+Playbooks': '#0F766E', 'Co-Pilot': '#E55A3F', 'Agents': '#B45309'} %}
+    {% for m in modules %}
+    {% set bucket = sections[m] %}
+    {% set anchor = m|replace(' ', '_')|replace('+', '_') %}
+    <section id="mod-{{ anchor }}" class="rounded-card border border-surf-200 bg-white overflow-hidden scroll-mt-20">
+      <div class="px-5 py-3 border-b border-surf-200 flex items-center justify-between gap-3">
+        <h2 class="font-semibold flex items-center gap-2">
+          <span class="inline-block w-2.5 h-2.5 rounded-full" style="background: {{ module_colors[m] }}"></span>
+          {{ m }}
+        </h2>
+        <div class="text-xs text-ink-600 flex items-center gap-3">
+          <span class="tnum">{{ bucket.total }} events · last {{ day_window }} days</span>
+          {% if bucket.last_seen %}<span class="tnum">· last seen {{ bucket.last_seen[:16] }}</span>{% endif %}
+        </div>
+      </div>
+      {% if bucket.sub_pages %}
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            {{ sort_th('Sub-page (2nd URL segment)', 'sub_page',  s_sort == 'sub_page',  s_dir, sections_link('sub_page'),  align='left') }}
+            {{ sort_th('Events',                    'events',    s_sort == 'events',    s_dir, sections_link('events')) }}
+            {{ sort_th('Last seen',                 'last_seen', s_sort == 'last_seen', s_dir, sections_link('last_seen'), align='left') }}
+          </tr>
+        </thead>
+        <tbody>
+          {% for sub, sp in bucket.sub_pages %}
+          <tr class="border-t border-surf-200">
+            <td class="px-4 py-2 font-mono text-[12px]">{{ sub }}</td>
+            <td class="px-4 py-2 text-right tnum">{{ sp.events }}</td>
+            <td class="px-4 py-2 text-xs tnum whitespace-nowrap">{{ sp.last_seen[:16] if sp.last_seen else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="px-5 py-6 text-center text-ink-400 text-sm">Not used in the {{ day_window }}-day window.</div>
+      {% endif %}
+    </section>
+    {% endfor %}
+    <p class="text-xs text-ink-400">Co-Pilot events double-count: they appear under Co-Pilot AND the page module the user was on.</p>
+  {% endif %}
+
+  {# ---------------------------------------------------------- PAGES #}
+  {% if tab == 'pages' %}
+    <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+      <div class="px-5 py-3 border-b border-surf-200 flex items-center justify-between flex-wrap gap-2">
+        <h2 class="font-semibold">Top pages · last {{ day_window }} days <span class="text-xs text-ink-400 font-normal">({{ pages|length }} URLs)</span></h2>
+        <p class="text-xs text-ink-400">Click any column header to sort.</p>
+      </div>
+      {% if pages %}
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            {{ sort_th('URL',        'url',    p_sort == 'url',    p_dir, pages_link('url'),    align='left') }}
+            {{ sort_th('Events',     'events', p_sort == 'events', p_dir, pages_link('events')) }}
+            {{ sort_th('Users',      'users',  p_sort == 'users',  p_dir, pages_link('users')) }}
+            {{ sort_th('Last seen',  'recent', p_sort == 'recent', p_dir, pages_link('recent'), align='left') }}
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in pages %}
+          <tr class="border-t border-surf-200">
+            <td class="px-4 py-2 font-mono text-[12px] break-all max-w-[640px]">{{ p.current_url }}</td>
+            <td class="px-4 py-2 text-right tnum">{{ p.n }}</td>
+            <td class="px-4 py-2 text-right tnum">{{ p.users }}</td>
+            <td class="px-4 py-2 text-xs tnum whitespace-nowrap">{{ p.last_seen[:16] if p.last_seen else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <div class="p-10 text-center text-ink-400 text-sm">No page-level events recorded.</div>
+      {% endif %}
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

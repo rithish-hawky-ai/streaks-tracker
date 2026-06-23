@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="{ tab: '{{ active_tab }}' }" class="space-y-6">
+
+  <div class="flex items-center gap-1 border-b border-surf-200" role="tablist">
+    <button @click="tab='brands'" :class="tab==='brands' ? 'border-coral text-coral-deep' : 'border-transparent text-ink-600'"
+            type="button" class="px-4 py-2 -mb-px border-b-2 text-sm font-medium">Brands</button>
+    <button @click="tab='hawky'" :class="tab==='hawky' ? 'border-coral text-coral-deep' : 'border-transparent text-ink-600'"
+            type="button" class="px-4 py-2 -mb-px border-b-2 text-sm font-medium">Hawky users</button>
+    <button @click="tab='settings'" :class="tab==='settings' ? 'border-coral text-coral-deep' : 'border-transparent text-ink-600'"
+            type="button" class="px-4 py-2 -mb-px border-b-2 text-sm font-medium">Settings</button>
+    <button @click="tab='runs'" :class="tab==='runs' ? 'border-coral text-coral-deep' : 'border-transparent text-ink-600'"
+            type="button" class="px-4 py-2 -mb-px border-b-2 text-sm font-medium">Run log</button>
+  </div>
+
+  <!-- BRANDS -->
+  <div x-show="tab==='brands'" class="space-y-4">
+    <section class="rounded-card border border-surf-200 bg-white p-4">
+      <h3 class="font-semibold mb-1 text-sm">Add / update brand</h3>
+      <p class="text-xs text-ink-600 mb-3">The dashboard only shows brands on this roster. Strangers in event data are dropped (and counted in the run log).</p>
+      <form method="POST" action="{{ url_for('config_brand_upsert') }}" class="grid grid-cols-1 md:grid-cols-6 gap-3 text-sm">
+        <input name="brand_id" placeholder="brand_id (Mixpanel)" class="px-3 py-2 border border-surf-200 rounded-card" required>
+        <input name="brand_name" placeholder="Brand name" class="px-3 py-2 border border-surf-200 rounded-card" required>
+        <input name="instance_label" placeholder="Instance (optional)" class="px-3 py-2 border border-surf-200 rounded-card">
+        <input name="agency" placeholder="Agency (e.g. Social Beat)" class="px-3 py-2 border border-surf-200 rounded-card">
+        <input name="parent_company" placeholder="Parent company (e.g. Cars24)" class="px-3 py-2 border border-surf-200 rounded-card">
+        <button class="px-4 py-2 bg-coral text-white rounded-card hover:bg-coral-hover font-medium">Save</button>
+        <label class="md:col-span-6 inline-flex items-center gap-2 text-xs text-ink-600">
+          <input type="checkbox" name="is_active" checked> Active (included in dashboard)
+        </label>
+        <p class="md:col-span-6 text-xs text-ink-400 -mt-1">Use <strong>agency</strong> for brands managed by an external agency (Social Beat, HiveMinds, …). Use <strong>parent company</strong> for multi-instance brand families (Cars24, Razorpay, Plum, Matrimony). Either, neither, or both is fine.</p>
+      </form>
+    </section>
+    <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left">
+          <tr>
+            <th class="px-4 py-2">brand_id</th>
+            <th class="px-4 py-2">Brand</th>
+            <th class="px-4 py-2">Instance</th>
+            <th class="px-4 py-2">Agency</th>
+            <th class="px-4 py-2">Parent company</th>
+            <th class="px-4 py-2">Active</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in brands %}
+          <tr class="border-t border-surf-200">
+            <td class="px-4 py-2 font-mono text-xs">{{ b.brand_id }}</td>
+            <td class="px-4 py-2">{{ b.brand_name }}</td>
+            <td class="px-4 py-2 text-ink-600">{{ b.instance_label or '—' }}</td>
+            <td class="px-4 py-2 text-ink-600">{{ b.agency or '—' }}</td>
+            <td class="px-4 py-2 text-ink-600 italic">{{ b.parent_company or '—' }}</td>
+            <td class="px-4 py-2">
+              {% if b.is_active %}<span class="text-green-700">yes</span>{% else %}<span class="text-ink-400">no</span>{% endif %}
+            </td>
+            <td class="px-4 py-2 text-right">
+              <form method="POST" action="{{ url_for('config_brand_delete', brand_id=b.brand_id) }}"
+                    onsubmit="return confirm('Delete brand {{ b.brand_name }}?')">
+                <button class="text-xs text-red-600 hover:underline">delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="px-4 py-10 text-center text-ink-400">No brands yet. Paste your roster into <code class="bg-surf-100 px-1 rounded">seed/brands.csv</code> before first boot, or add rows above.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- HAWKY -->
+  <div x-show="tab==='hawky'" class="space-y-4" x-cloak>
+
+    <!-- Pattern rules — bulk include/exclude by condition -->
+    <section class="rounded-card border border-coral bg-coral-subtle p-4">
+      <h3 class="font-semibold mb-1 text-sm text-coral-deep">Bulk rules (condition-based)</h3>
+      <p class="text-xs text-ink-600 mb-3">
+        Match many emails at once with conditions. Rules apply in id order; <em>first match wins</em>.
+        Evaluated <strong>after</strong> the per-email allow/deny list below but <strong>before</strong> the domain/substring filters in Settings — so you can carve specific exceptions out of broad rules. Example: rule <code class="bg-white px-1 rounded">email contains hawky → deny</code> catches the whole Hawky team; an explicit allow on <code class="bg-white px-1 rounded">hawky.io@partner.com</code> overrides it.
+      </p>
+      <form method="POST" action="{{ url_for('config_rule_upsert') }}" class="grid grid-cols-1 md:grid-cols-5 gap-3 text-sm items-end">
+        <div>
+          <span class="text-[11px] text-ink-600 block mb-1">Field</span>
+          <select disabled class="w-full px-3 py-2 border border-surf-200 rounded-card bg-white text-ink-400">
+            <option>email</option>
+          </select>
+        </div>
+        <div>
+          <span class="text-[11px] text-ink-600 block mb-1">Condition</span>
+          <select name="operator" required class="w-full px-3 py-2 border border-surf-200 rounded-card bg-white">
+            {% for op in rule_operators %}<option value="{{ op }}">{{ op.replace('_', ' ') }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <span class="text-[11px] text-ink-600 block mb-1">Value (case-insensitive)</span>
+          <input name="value" placeholder="hawky" required class="w-full px-3 py-2 border border-surf-200 rounded-card font-mono">
+        </div>
+        <div>
+          <span class="text-[11px] text-ink-600 block mb-1">Then</span>
+          <select name="kind" required class="w-full px-3 py-2 border border-surf-200 rounded-card bg-white">
+            <option value="deny">Deny (exclude)</option>
+            <option value="allow">Allow (force include)</option>
+          </select>
+        </div>
+        <button class="px-4 py-2 bg-coral text-white rounded-card hover:bg-coral-hover font-medium">Add rule</button>
+        <input name="note" placeholder="Optional note (e.g. 'catches @hawky.ai @gmail tester accounts')"
+               class="md:col-span-5 w-full px-3 py-2 border border-surf-200 rounded-card text-xs">
+      </form>
+
+      {% if rules %}
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full text-sm bg-white rounded-card">
+          <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+            <tr>
+              <th class="px-3 py-2">#</th>
+              <th class="px-3 py-2">If email</th>
+              <th class="px-3 py-2">Value</th>
+              <th class="px-3 py-2">Then</th>
+              <th class="px-3 py-2">Note</th>
+              <th class="px-3 py-2">Added</th>
+              <th class="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rules %}
+            <tr class="border-t border-surf-200">
+              <td class="px-3 py-2 text-ink-400 tnum text-xs">{{ r.id }}</td>
+              <td class="px-3 py-2 text-xs">{{ r.operator.replace('_', ' ') }}</td>
+              <td class="px-3 py-2 font-mono text-xs">{{ r.value }}</td>
+              <td class="px-3 py-2 text-xs">
+                {% if r.kind == 'deny' %}
+                <span class="px-2 py-0.5 rounded-chip bg-coral text-white text-[11px] font-medium">deny</span>
+                {% else %}
+                <span class="px-2 py-0.5 rounded-chip bg-green-700 text-white text-[11px] font-medium">allow</span>
+                {% endif %}
+              </td>
+              <td class="px-3 py-2 text-xs text-ink-600 max-w-[260px] truncate" title="{{ r.note or '' }}">{{ r.note or '—' }}</td>
+              <td class="px-3 py-2 text-xs text-ink-400 tnum whitespace-nowrap">{{ r.created_at[:16] }}</td>
+              <td class="px-3 py-2 text-right">
+                <form method="POST" action="{{ url_for('config_rule_delete', rule_id=r.id) }}" onsubmit="return confirm('Delete rule #{{ r.id }}?')">
+                  <button class="text-xs text-red-600 hover:underline">delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-[11px] text-ink-400 mt-2">After adding/removing rules, click <strong>Re-apply now</strong> in the Settings tab to retroactively prune events from already-imported users that newly match.</p>
+      {% else %}
+      <p class="text-xs text-ink-400 mt-3">No rules yet. The legacy "substring" setting in the Settings tab still applies (currently set to <code class="bg-white px-1 rounded">{{ settings.hawky_substrings }}</code>).</p>
+      {% endif %}
+    </section>
+
+    <section class="rounded-card border border-surf-200 bg-white p-4">
+      <h3 class="font-semibold mb-1 text-sm">Allow / deny specific emails</h3>
+      <p class="text-xs text-ink-600 mb-3">Per-email overrides — these take priority over the rules above and the domain/substring filters in Settings. Use for one-off exceptions.</p>
+      <form method="POST" action="{{ url_for('config_exclusion_upsert') }}" class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+        <input name="email" placeholder="user@example.com" class="px-3 py-2 border border-surf-200 rounded-card" required>
+        <select name="kind" class="px-3 py-2 border border-surf-200 rounded-card">
+          <option value="deny">Deny (always exclude)</option>
+          <option value="allow">Allow (force include)</option>
+        </select>
+        <input name="note" placeholder="Note (optional)" class="px-3 py-2 border border-surf-200 rounded-card">
+        <button class="px-4 py-2 bg-coral text-white rounded-card hover:bg-coral-hover font-medium">Save</button>
+      </form>
+    </section>
+
+    <section class="grid md:grid-cols-2 gap-4">
+      <div class="rounded-card border border-surf-200 bg-white p-4">
+        <h4 class="font-semibold text-sm mb-2">Deny (force exclude)</h4>
+        {% if deny %}
+        <ul class="text-sm divide-y divide-surf-200">
+          {% for e in deny %}
+          <li class="flex items-center justify-between py-1.5">
+            <span class="font-mono text-xs">{{ e }}</span>
+            <form method="POST" action="{{ url_for('config_exclusion_delete', email=e) }}">
+              <button class="text-xs text-red-600 hover:underline">remove</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}<p class="text-xs text-ink-400">None.</p>{% endif %}
+      </div>
+      <div class="rounded-card border border-surf-200 bg-white p-4">
+        <h4 class="font-semibold text-sm mb-2">Allow (force include)</h4>
+        {% if allow %}
+        <ul class="text-sm divide-y divide-surf-200">
+          {% for e in allow %}
+          <li class="flex items-center justify-between py-1.5">
+            <span class="font-mono text-xs">{{ e }}</span>
+            <form method="POST" action="{{ url_for('config_exclusion_delete', email=e) }}">
+              <button class="text-xs text-red-600 hover:underline">remove</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}<p class="text-xs text-ink-400">None.</p>{% endif %}
+      </div>
+    </section>
+  </div>
+
+  <!-- SETTINGS -->
+  <div x-show="tab==='settings'" class="space-y-4" x-cloak>
+    <section class="rounded-card border border-surf-200 bg-white p-4">
+      <h3 class="font-semibold mb-3 text-sm">Settings</h3>
+      <form method="POST" action="{{ url_for('config_settings_save') }}" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <label class="block">
+          <span class="text-xs text-ink-600">Background refresh (minutes)</span>
+          <input name="refresh_min" type="number" min="1" value="{{ settings.refresh_min }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card">
+        </label>
+        <label class="block">
+          <span class="text-xs text-ink-600">Day window (per row)</span>
+          <input name="day_window" type="number" min="7" max="60" value="{{ settings.day_window }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card">
+        </label>
+        <label class="block">
+          <span class="text-xs text-ink-600">Weekend days (0=Mon … 6=Sun, comma-separated)</span>
+          <input name="weekend_days" value="{{ settings.weekend_days }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card">
+        </label>
+        <label class="block">
+          <span class="text-xs text-ink-600">Timezone</span>
+          <input name="timezone" value="{{ settings.timezone }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card" readonly>
+        </label>
+        <label class="block md:col-span-2">
+          <span class="text-xs text-ink-600">Hawky domains (strict equality, comma-separated)</span>
+          <input name="hawky_domains" value="{{ settings.hawky_domains }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card">
+        </label>
+        <label class="block md:col-span-2">
+          <span class="text-xs text-ink-600">Hawky email substrings (case-insensitive, comma-separated)</span>
+          <input name="hawky_substrings" value="{{ settings.hawky_substrings }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card">
+          <span class="text-[11px] text-ink-400 mt-1 block">Catches Hawky team accounts on non-Hawky domains (e.g. <code class="bg-surf-100 px-1 rounded">hawky.ai@gmail.com</code>). Edge case: any real customer email containing "hawky" gets dropped too — add them to the <em>allow</em> list on the Hawky users tab.</span>
+        </label>
+        <label class="block">
+          <span class="text-xs text-ink-600">Co-Pilot Heavy threshold (events/wk)</span>
+          <input name="copilot_heavy" type="number" min="1" value="{{ settings.copilot_heavy }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card">
+        </label>
+        <label class="block">
+          <span class="text-xs text-ink-600">Co-Pilot Moderate threshold (events/wk)</span>
+          <input name="copilot_moderate" type="number" min="1" value="{{ settings.copilot_moderate }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card">
+        </label>
+        <label class="block md:col-span-2">
+          <span class="text-xs text-ink-600">Co-Pilot message event name (the high-signal adoption metric)</span>
+          <input name="copilot_message_event" value="{{ settings.copilot_message_event }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card font-mono">
+          <span class="text-[11px] text-ink-400 mt-1 block">Exact Mixpanel event name. Default <code class="bg-surf-100 px-1 rounded">copilot_message_sent</code>. Used by the home-page "Co-Pilot messages sent" KPI &amp; chart metric, the /copilot adoption table's ★ columns, and the brand drill-down Co-Pilot card.</span>
+        </label>
+        <label class="block">
+          <span class="text-xs text-ink-600">Snapshot retention cap</span>
+          <input name="snapshot_cap" type="number" min="5" max="200" value="{{ settings.snapshot_cap }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card">
+        </label>
+        <label class="block md:col-span-2">
+          <span class="text-xs text-ink-600">Product base URL (Creative Tracker deep links)</span>
+          <input name="product_base_url" value="{{ settings.product_base_url }}" class="mt-1 w-full px-3 py-2 border border-surf-200 rounded-card font-mono">
+          <span class="text-[11px] text-ink-400 mt-1 block">Base URL for the “View N tables” links on the Creatives drill-down, e.g. <code class="bg-surf-100 px-1 rounded">https://staging.hawky.ai</code> → <code class="bg-surf-100 px-1 rounded">…/app/production/&lt;brand&gt;/&lt;table&gt;</code>.</span>
+        </label>
+        <div class="md:col-span-2">
+          <button class="px-4 py-2 bg-coral text-white rounded-card hover:bg-coral-hover font-medium">Save settings</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="rounded-card border border-surf-200 bg-white p-4">
+      <h3 class="font-semibold mb-1 text-sm">Re-apply Hawky filter to existing events</h3>
+      <p class="text-xs text-ink-600 mb-3">
+        After changing Hawky domains, substrings, or allow/deny lists, click this to prune already-imported events that now match the rule. Saves a full Mixpanel re-fetch.
+      </p>
+      <form method="POST" action="{{ url_for('api_reapply_hawky_filter') }}">
+        <button class="px-4 py-2 rounded-card border border-coral text-coral-deep hover:bg-coral-subtle text-sm font-medium">
+          Re-apply now
+        </button>
+      </form>
+    </section>
+  </div>
+
+  <!-- RUN LOG -->
+  <div x-show="tab==='runs'" class="space-y-4" x-cloak>
+
+    <!-- Creatives sync (Mongo) -->
+    <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+      <div class="px-4 py-3 border-b border-surf-200 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 class="font-semibold text-sm">Creatives sync · MongoDB</h3>
+          <p class="text-xs text-ink-400 mt-0.5">
+            Syncs the <code class="bg-surf-100 px-1 rounded">inventories</code> collection into the Creative Tracker. Runs on the same cadence as the Mixpanel refresh, isolated so a Mongo outage never breaks it.
+            {% if not mongo_configured %}<span class="text-red-700">MONGO_URI is not configured — sync is disabled.</span>{% endif %}
+          </p>
+        </div>
+        {% if mongo_configured %}
+        <div class="flex items-center gap-2" x-data="{ msg: '' }">
+          <span class="text-xs text-coral-deep tnum" x-text="msg" aria-live="polite"></span>
+          <button type="button"
+                  @click="msg='syncing…'; fetch('{{ url_for('api_creatives_sync') }}', {method:'POST'}).then(r=>r.json()).then(()=>{msg='started · reloading'; setTimeout(()=>location.reload(), 4000)}).catch(()=>msg='error — see logs')"
+                  class="px-3 py-1.5 rounded-card bg-coral text-white hover:bg-coral-hover text-xs font-medium">
+            Sync now
+          </button>
+        </div>
+        {% endif %}
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-surf-50 text-ink-600 text-left">
+            <tr>
+              <th class="px-3 py-2">Started</th>
+              <th class="px-3 py-2">Finished</th>
+              <th class="px-3 py-2">Kind</th>
+              <th class="px-3 py-2">Status</th>
+              <th class="px-3 py-2 text-right">Docs seen</th>
+              <th class="px-3 py-2 text-right">Stored</th>
+              <th class="px-3 py-2 text-right">Unattributed</th>
+              <th class="px-3 py-2">Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in creative_syncs %}
+            <tr class="border-t border-surf-200">
+              <td class="px-3 py-2 font-mono tnum">{{ s.started_at }}</td>
+              <td class="px-3 py-2 font-mono tnum">{{ s.finished_at or '—' }}</td>
+              <td class="px-3 py-2">{{ s.kind }}</td>
+              <td class="px-3 py-2 {% if s.status == 'error' %}text-red-700{% elif s.status == 'ok' %}text-green-700{% else %}text-ink-600{% endif %}">{{ s.status }}</td>
+              <td class="px-3 py-2 text-right tnum">{{ s.docs_seen or 0 }}</td>
+              <td class="px-3 py-2 text-right tnum">{{ s.docs_upserted or 0 }}</td>
+              <td class="px-3 py-2 text-right tnum">{{ s.unattributed or 0 }}</td>
+              <td class="px-3 py-2 text-red-700">{{ s.error|truncate(80, True) if s.error else '' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="px-4 py-8 text-center text-ink-400">No creatives syncs yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <h3 class="font-semibold text-sm pt-2">Mixpanel refresh runs</h3>
+    <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+      <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-surf-50 text-ink-600 text-left">
+          <tr>
+            <th class="px-3 py-2">Started</th>
+            <th class="px-3 py-2">Finished</th>
+            <th class="px-3 py-2">Kind</th>
+            <th class="px-3 py-2">Status</th>
+            <th class="px-3 py-2">Window</th>
+            <th class="px-3 py-2 text-right">Hops</th>
+            <th class="px-3 py-2 text-right">Seen</th>
+            <th class="px-3 py-2 text-right">Kept</th>
+            <th class="px-3 py-2 text-right">No brand</th>
+            <th class="px-3 py-2 text-right">Off-roster</th>
+            <th class="px-3 py-2 text-right">No profile</th>
+            <th class="px-3 py-2 text-right">Hawky</th>
+            <th class="px-3 py-2 text-right">Out-of-win</th>
+            <th class="px-3 py-2 text-right">No time</th>
+            <th class="px-3 py-2 text-right">Profiles</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in recent %}
+          <tr class="border-t border-surf-200">
+            <td class="px-3 py-2 font-mono tnum">{{ r.started_at }}</td>
+            <td class="px-3 py-2 font-mono tnum">{{ r.finished_at or '—' }}</td>
+            <td class="px-3 py-2">{{ r.kind }}</td>
+            <td class="px-3 py-2 {% if r.status == 'error' %}text-red-700{% elif r.status == 'ok' %}text-green-700{% else %}text-ink-600{% endif %}">{{ r.status }}</td>
+            <td class="px-3 py-2 font-mono">{{ r.actual_from or '—' }} → {{ r.actual_to or '—' }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.fallback_hops or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.events_seen or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.events_kept or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.dropped_no_brand_id or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.dropped_not_on_roster or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.dropped_no_profile or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.dropped_hawky_excluded or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.dropped_out_of_window or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.dropped_no_time or 0 }}</td>
+            <td class="px-3 py-2 text-right tnum">{{ r.profiles_fetched or 0 }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="15" class="px-4 py-8 text-center text-ink-400">No runs yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

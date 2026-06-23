@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.env
+.venv/
+venv/
+streaks.db
+streaks.db-journal
+streaks.db-wal
+streaks.db-shm

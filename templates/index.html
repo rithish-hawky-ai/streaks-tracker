@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.1/dist/apexcharts.min.js"></script>
+<style>
+  /* Sticky brand column + header for the matrix */
+  .matrix-wrap { max-height: 520px; overflow: auto; }
+  .matrix-wrap thead th { position: sticky; top: 0; background: #FAFAFA; z-index: 2; }
+  .matrix-wrap td.sticky-col, .matrix-wrap th.sticky-col {
+    position: sticky; left: 0; background: white; z-index: 1;
+    box-shadow: 1px 0 0 0 #E4E4E7;
+  }
+  .matrix-wrap thead th.sticky-col { z-index: 3; background: #FAFAFA; }
+  /* Brand row hover highlight crossing the sticky column */
+  .matrix-row:hover td { background: #FEF1EE; }
+  .matrix-row:hover td.sticky-col { background: #FEF1EE; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Filter bar -->
+  <section class="rounded-card border border-surf-200 bg-white">
+    <form method="GET" action="{{ url_for('index') }}" class="p-3 grid grid-cols-1 md:grid-cols-12 gap-2 text-sm items-center">
+      <input name="q" value="{{ f_q }}" placeholder="Search brand name or brand_id"
+             class="md:col-span-4 px-3 py-2 border border-surf-200 rounded-card">
+      <select name="agency" class="md:col-span-2 px-3 py-2 border border-surf-200 rounded-card bg-white">
+        <option value="">All agencies</option>
+        {% for a in agencies %}<option value="{{ a }}" {% if a == f_agency %}selected{% endif %}>{{ a }}</option>{% endfor %}
+      </select>
+      <select name="parent" class="md:col-span-2 px-3 py-2 border border-surf-200 rounded-card bg-white">
+        <option value="">All parent companies</option>
+        {% for p in parents %}<option value="{{ p }}" {% if p == f_parent %}selected{% endif %}>{{ p }}</option>{% endfor %}
+      </select>
+      <select name="module" class="md:col-span-2 px-3 py-2 border border-surf-200 rounded-card bg-white">
+        <option value="">All modules</option>
+        {% for m in modules %}<option value="{{ m }}" {% if m == f_module %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+      <div class="md:col-span-2 flex items-center gap-2">
+        <button class="px-4 py-2 bg-coral text-white rounded-card hover:bg-coral-hover font-medium">Apply</button>
+        {% if f_q or f_agency or f_parent or f_module %}
+        <a href="{{ url_for('index') }}" class="text-xs text-ink-600 hover:text-coral-deep">Clear</a>
+        {% endif %}
+      </div>
+      <input type="hidden" name="sort" value="{{ f_sort }}">
+      <input type="hidden" name="dir" value="{{ f_dir }}">
+    </form>
+    {% if f_q or f_agency or f_parent or f_module or f_kpi %}
+    <div class="px-3 pb-3 flex flex-wrap items-center gap-2 text-xs">
+      <span class="text-ink-400">Showing {{ total_visible }} of {{ total_all }} brands</span>
+      {% if f_q %}<a href="{{ clear_urls.q }}" class="inline-flex items-center gap-1 px-2 py-1 rounded-chip bg-coral-subtle text-coral-deep">search: "{{ f_q }}" ✕</a>{% endif %}
+      {% if f_agency %}<a href="{{ clear_urls.agency }}" class="inline-flex items-center gap-1 px-2 py-1 rounded-chip bg-coral-subtle text-coral-deep">agency: {{ f_agency }} ✕</a>{% endif %}
+      {% if f_parent %}<a href="{{ clear_urls.parent }}" class="inline-flex items-center gap-1 px-2 py-1 rounded-chip bg-coral-subtle text-coral-deep">parent: {{ f_parent }} ✕</a>{% endif %}
+      {% if f_module %}<a href="{{ clear_urls.module }}" class="inline-flex items-center gap-1 px-2 py-1 rounded-chip bg-coral-subtle text-coral-deep">module: {{ f_module }} ✕</a>{% endif %}
+      {% if f_kpi %}<a href="{{ clear_urls.kpi }}" class="inline-flex items-center gap-1 px-2 py-1 rounded-chip bg-coral-subtle text-coral-deep">kpi: {{ f_kpi.replace('_', ' ') }} ✕</a>{% endif %}
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- KPI strip — every card is a click-to-filter link; clicking the active one clears -->
+  <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3" aria-label="Quick filters">
+    {% macro kpi_card(name, label, value, sub, base_classes, active_classes) -%}
+      {% set is_active = f_kpi == name %}
+      <a href="{{ kpi_links[name] }}"
+         aria-pressed="{{ 'true' if is_active else 'false' }}"
+         aria-label="Filter brand list to {{ label }} ({{ value }} {{ 'brand' if value == 1 else 'brands' }}). {{ 'Click to clear.' if is_active else '' }}"
+         class="rounded-card border p-4 transition-colors block
+                {% if is_active %}{{ active_classes }} ring-2 ring-coral ring-offset-1{% else %}{{ base_classes }} hover:border-coral{% endif %}">
+        <div class="text-[11px] uppercase tracking-wide flex items-center justify-between gap-1 {% if is_active %}text-coral-deep{% else %}text-ink-400{% endif %}">
+          <span>{{ label }}</span>
+          {% if is_active %}<span class="text-[10px] font-normal">✕ clear</span>{% endif %}
+        </div>
+        <div class="text-3xl font-semibold tnum mt-1 {% if is_active %}text-coral-deep{% endif %}">{{ value }}</div>
+        <div class="text-xs mt-1 {% if is_active %}text-coral-deep{% else %}text-ink-400{% endif %}">{{ sub }}</div>
+      </a>
+    {%- endmacro %}
+
+    {{ kpi_card('total',
+                'Total brands', kpis.total,
+                'on the roster',
+                'border-surf-200 bg-white',
+                'border-coral bg-coral-subtle') }}
+    {{ kpi_card('active_today',
+                'Active today', kpis.active_today,
+                'IST calendar date',
+                'border-surf-200 bg-white',
+                'border-coral bg-coral-subtle') }}
+    {{ kpi_card('active_now',
+                'Active now', kpis.active_now,
+                'rolling 24h',
+                'border-surf-200 bg-white',
+                'border-coral bg-coral-subtle') }}
+    {{ kpi_card('active_period',
+                'Active in ' ~ day_window ~ 'd', kpis.active_period,
+                'at least one event',
+                'border-surf-200 bg-white',
+                'border-coral bg-coral-subtle') }}
+    {{ kpi_card('perfect_streak',
+                'Perfect streak', kpis.perfect_streak,
+                'all ' ~ weekday_count ~ ' weekdays',
+                'border-surf-200 bg-white',
+                'border-coral bg-coral-subtle') }}
+    {{ kpi_card('copilot_msgs_7d',
+                'Co-Pilot msgs · 7d', kpis.copilot_msgs_7d,
+                (kpis.copilot_msg_users_7d|string) ~ ' user' ~ ('' if kpis.copilot_msg_users_7d == 1 else 's') ~ ' · ' ~ (kpis.copilot_msg_brands_7d|string) ~ ' brand' ~ ('' if kpis.copilot_msg_brands_7d == 1 else 's'),
+                'border-coral bg-coral-subtle',
+                'border-coral-deep bg-coral-soft') }}
+  </section>
+
+  <!-- Module Adoption Matrix -->
+  <section class="rounded-card border border-surf-200 bg-white">
+    <div class="px-4 py-3 border-b border-surf-200 flex items-center justify-between gap-4 flex-wrap">
+      <h2 class="font-semibold flex items-center gap-2">
+        Module Adoption Matrix
+        <span class="relative" x-data="{open: false}" @mouseenter="open=true" @mouseleave="open=false">
+          <button type="button" aria-label="What counts here?"
+                  class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-surf-200 text-[10px] text-ink-600 hover:bg-surf-100">?</button>
+          <span x-show="open" x-cloak
+                class="absolute left-5 -top-1 z-20 w-72 p-3 rounded-card bg-ink-900 text-white text-xs leading-relaxed shadow-lg">
+            Co-Pilot events double-count: a <code>copilot_*</code> event also credits the page module the user was on (Creative Intel, Competitive Intel, Production+Playbooks, or Agents). Cell intensity is per-column quantile so low-traffic modules are still legible.
+          </span>
+        </span>
+      </h2>
+      <p class="text-xs text-ink-400">Last {{ day_window }} days (IST). Click a row to drill.</p>
+    </div>
+    <p class="sr-only">Module adoption matrix: {{ rows|length }} brand{{ '' if rows|length == 1 else 's' }} across 5 modules (Creative Intel, Competitive Intel, Production+Playbooks, Co-Pilot, Agents). Cell intensity reflects per-column quantile. Co-Pilot events double-count toward the underlying page module.</p>
+    <div class="matrix-wrap">
+      <table class="w-full text-sm">
+        <thead class="text-ink-600 text-left">
+          <tr>
+            <th class="sticky-col px-4 py-2 font-medium min-w-[260px]">Brand</th>
+            {% for m in modules %}
+            <th class="px-3 py-2 font-medium text-right whitespace-nowrap">{{ m }}</th>
+            {% endfor %}
+            <th class="px-3 py-2 font-medium text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="matrix-row border-t border-surf-200"
+              role="link" tabindex="0"
+              aria-label="Open drill-down for {{ r.brand.brand_name }}"
+              onclick="window.location='{{ url_for('brand_page', brand_id=r.brand.brand_id) }}'"
+              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location='{{ url_for('brand_page', brand_id=r.brand.brand_id) }}'}">
+            <td class="sticky-col px-4 py-2 align-middle">
+              <div class="flex items-center gap-2 flex-wrap">
+                {% if r.brand.agency %}<span class="px-2 py-0.5 rounded-chip bg-surf-100 text-[11px] text-ink-600">{{ r.brand.agency }}</span>{% endif %}
+                {% if r.brand.parent_company %}<span class="px-2 py-0.5 rounded-chip border border-surf-200 text-[11px] text-ink-600 italic">↳ {{ r.brand.parent_company }}</span>{% endif %}
+                <span class="font-medium">{{ r.brand.brand_name }}</span>
+              </div>
+              <div class="text-[11px] text-ink-400 font-mono mt-0.5">{{ r.brand.brand_id }}</div>
+            </td>
+            {% for m in modules %}
+              {% set v = r.modules.get(m, 0) %}
+              {% set t = matrix_thresholds[m] %}
+              <td class="p-0 tip-host"
+                  data-tip="{{ r.brand.brand_name }} · {{ m }}&#10;{{ v }} events · {{ module_users.get(r.brand.brand_id, {}).get(m, 0) }} user{{ '' if module_users.get(r.brand.brand_id, {}).get(m, 0) == 1 else 's' }} · {{ day_window }}d&#10;click to drill">
+                <a href="{{ url_for('brand_page', brand_id=r.brand.brand_id, tab='sections') }}#mod-{{ m|replace(' ', '_')|replace('+', '_') }}"
+                   onclick="event.stopPropagation()"
+                   aria-label="Open {{ r.brand.brand_name }} · {{ m }} section ({{ v }} events)"
+                   class="block px-3 py-2 text-right tnum no-underline
+                   {%- if v == 0 %} text-ink-400 bg-surf-100
+                   {%- elif v <= t[0] %} bg-coral-subtle text-coral-deep
+                   {%- elif v <= t[1] %} bg-coral-soft text-coral-deep
+                   {%- elif v <= t[2] %} bg-coral-warm text-ink-900
+                   {%- elif v <= t[3] %} bg-coral text-white
+                   {%- else %} bg-coral-deep text-white font-semibold
+                   {%- endif -%}">{{ v }}</a>
+              </td>
+            {% endfor %}
+            <td class="px-3 py-2 text-right tnum font-semibold">{{ r.modules.total or 0 }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ modules|length + 2 }}" class="px-4 py-10 text-center text-ink-400">No brands match the current filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Charts row -->
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <div class="lg:col-span-2 rounded-card border border-surf-200 bg-white">
+      <div class="px-4 py-3 border-b border-surf-200 flex items-center justify-between gap-3 flex-wrap">
+        <h2 class="font-semibold">Engagement <span class="text-xs text-ink-400 font-normal">· last {{ day_window }} days (IST) · <span id="chart-engagement-metric-label">events / day</span>{% if chart_scope_label %}<span class="text-coral-deep">{{ chart_scope_label }}</span>{% endif %}</span></h2>
+        <label class="text-xs text-ink-600 flex items-center gap-2">
+          Metric
+          <select id="chart-engagement-metric"
+                  class="px-2 py-1 border border-surf-200 rounded-card bg-white text-xs">
+            <option value="events">Events</option>
+            <option value="users">Users (distinct)</option>
+            <option value="brands">Active brands</option>
+            <option value="copilot_messages">Co-Pilot messages sent</option>
+            <option value="copilot_events">Co-Pilot events (all)</option>
+            <option value="copilot_users">Co-Pilot users</option>
+          </select>
+        </label>
+      </div>
+      <div id="chart-engagement" class="px-2 py-2"></div>
+    </div>
+    <div class="rounded-card border border-surf-200 bg-white">
+      <div class="px-4 py-3 border-b border-surf-200">
+        <h2 class="font-semibold">Module mix <span class="text-xs text-ink-400 font-normal">· {{ day_window }}d total{% if chart_scope_label %}<span class="text-coral-deep">{{ chart_scope_label }}</span>{% endif %}</span></h2>
+      </div>
+      <div id="chart-modules" class="px-2 py-2"></div>
+    </div>
+  </section>
+
+  <!-- Brand table -->
+  <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+    <div class="px-4 py-3 border-b border-surf-200 flex items-center justify-between flex-wrap gap-3">
+      <h2 class="font-semibold">Brands ({{ total_visible }})</h2>
+      <p class="text-xs text-ink-400">Coral cells = activity (darker = more events). Striped cells = weekend (never break a streak). Click any row for the brand drill-down.</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left">
+          <tr>
+            <th class="px-4 py-2 font-medium">Org</th>
+            <th class="px-4 py-2 font-medium">Brand</th>
+            <th class="px-4 py-2 font-medium">Activity ({{ day_window }}d)</th>
+            <th class="px-4 py-2 font-medium">7d trend</th>
+            {% macro sort_th(label, key) -%}
+              {% set new_dir = 'asc' if (f_sort == key and f_dir == 'desc') else 'desc' %}
+              {% set aria = 'ascending' if (f_sort == key and f_dir == 'asc') else ('descending' if f_sort == key else 'none') %}
+              <th class="px-4 py-2 font-medium text-right" aria-sort="{{ aria }}">
+                <a class="hover:text-coral-deep {% if f_sort == key %}text-coral-deep{% endif %}"
+                   href="{{ url_for('index', q=f_q, agency=f_agency, parent=f_parent, module=f_module, sort=key, dir=new_dir) }}">{{ label }}{% if f_sort == key %} {% if f_dir == 'asc' %}↑{% else %}↓{% endif %}{% endif %}</a>
+              </th>
+            {%- endmacro %}
+            {{ sort_th('Streak',  'streak') }}
+            {{ sort_th('Events (' ~ day_window ~ 'd)',  'events') }}
+            {{ sort_th('Users (' ~ day_window ~ 'd)',   'users') }}
+            {{ sort_th('Today',   'today') }}
+            {{ sort_th('Last',    'last_active') }}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="border-t border-surf-200 hover:bg-surf-50"
+              role="link" tabindex="0"
+              aria-label="Open drill-down for {{ r.brand.brand_name }}"
+              onclick="if(event.target.tagName!=='A') window.location='{{ url_for('brand_page', brand_id=r.brand.brand_id) }}'"
+              onkeydown="if((event.key==='Enter'||event.key===' ')&&event.target.tagName!=='A'){event.preventDefault();window.location='{{ url_for('brand_page', brand_id=r.brand.brand_id) }}'}">
+            <td class="px-4 py-2 align-middle">
+              <div class="flex flex-col gap-0.5">
+                {% if r.brand.agency %}<span class="px-2 py-0.5 rounded-chip bg-surf-100 text-[11px] text-ink-600">{{ r.brand.agency }}</span>{% endif %}
+                {% if r.brand.parent_company %}<span class="px-2 py-0.5 rounded-chip border border-surf-200 text-[11px] text-ink-600 italic">↳ {{ r.brand.parent_company }}</span>{% endif %}
+                {% if not r.brand.agency and not r.brand.parent_company %}<span class="text-[11px] text-ink-400">direct</span>{% endif %}
+              </div>
+            </td>
+            <td class="px-4 py-2 align-middle">
+              <div class="font-medium">{{ r.brand.brand_name }}{% if r.brand.instance_label %}<span class="text-ink-400 text-xs"> · {{ r.brand.instance_label }}</span>{% endif %}</div>
+              <div class="text-xs text-ink-400 font-mono">{{ r.brand.brand_id }}</div>
+            </td>
+            <td class="px-4 py-2 align-middle">
+              <div class="flex gap-[2px]" role="img" aria-label="{{ day_window }}-day activity for {{ r.brand.brand_name }}">
+              {% for c in r.day_cells %}
+                <span class="tip-host w-3 h-5 rounded-[2px] shrink-0 block
+                     {%- if c.is_weekend %} stripe-weekend
+                     {%- elif c.events == 0 %} bg-surf-100
+                     {%- elif c.events < 5 %} bg-coral-subtle
+                     {%- elif c.events < 20 %} bg-coral-soft
+                     {%- elif c.events < 60 %} bg-coral-warm
+                     {%- else %} bg-coral
+                     {%- endif -%}
+                     {%- if c.is_today %} ring-2 ring-coral ring-offset-1{%- endif -%}"
+                     data-tip="{{ c.tip }}"></span>
+              {% endfor %}
+              </div>
+            </td>
+            <td class="px-4 py-2 align-middle">
+              <span class="tip-host inline-block"
+                    data-tip="7-day events sparkline · max {{ r.spark_max }} events/day">
+                <svg width="64" height="16" viewBox="0 0 60 16" aria-hidden="true">
+                  <polyline points="{{ r.spark_points }}" fill="none" stroke="#E55A3F" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                </svg>
+              </span>
+            </td>
+            <td class="px-4 py-2 align-middle text-right tnum font-semibold {% if r.streak >= 5 %}text-coral-deep{% elif r.streak == 0 %}text-ink-400{% endif %}">
+              {% if r.streak > 0 and r.streak_from %}
+                <span class="tip-host inline-block"
+                      data-tip="Streak: {{ r.streak_from }} → {{ r.streak_to }}&#10;({{ r.streak }} weekday{{ '' if r.streak == 1 else 's' }}, weekends never break it)">{{ r.streak }}</span>
+              {% else %}
+                {{ r.streak }}
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 align-middle text-right tnum">{{ r.events_total }}</td>
+            <td class="px-4 py-2 align-middle text-right tnum">{{ r.users_total }}</td>
+            <td class="px-4 py-2 align-middle text-right tnum {% if r.today_events == 0 %}text-ink-400{% else %}text-coral-deep font-semibold{% endif %}">{{ r.today_events }}</td>
+            <td class="px-4 py-2 align-middle text-right text-xs text-ink-600">{{ r.last_active or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="px-4 py-10 text-center text-ink-400">No brands match the current filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {% if last_run %}
+  <section class="rounded-card border border-surf-200 bg-surf-50 p-4 text-xs text-ink-600">
+    <div class="font-semibold text-ink-900 text-sm mb-1">Most recent refresh</div>
+    <div class="flex flex-wrap gap-x-4 gap-y-1">
+      <span>kind: <strong>{{ last_run.kind }}</strong></span>
+      <span>status: <strong class="{% if last_run.status == 'error' %}text-red-700{% else %}text-ink-900{% endif %}">{{ last_run.status }}</strong></span>
+      <span>actual: {{ last_run.actual_from or '—' }} → {{ last_run.actual_to or '—' }}</span>
+      <span>hops: <span class="tnum">{{ last_run.fallback_hops or 0 }}</span></span>
+      <span>seen: <span class="tnum">{{ last_run.events_seen or 0 }}</span></span>
+      <span>kept: <span class="tnum">{{ last_run.events_kept or 0 }}</span></span>
+      <span>no brand_id: <span class="tnum">{{ last_run.dropped_no_brand_id or 0 }}</span></span>
+      <span>off-roster: <span class="tnum">{{ last_run.dropped_not_on_roster or 0 }}</span></span>
+      <span>no profile: <span class="tnum">{{ last_run.dropped_no_profile or 0 }}</span></span>
+      <span>hawky: <span class="tnum">{{ last_run.dropped_hawky_excluded or 0 }}</span></span>
+      <span>out-of-window: <span class="tnum">{{ last_run.dropped_out_of_window or 0 }}</span></span>
+      <span>no time: <span class="tnum">{{ last_run.dropped_no_time or 0 }}</span></span>
+      <span>profiles: <span class="tnum">{{ last_run.profiles_fetched or 0 }}</span></span>
+    </div>
+    {% if last_run.error %}<div class="mt-2 text-red-700">{{ last_run.error }}</div>{% endif %}
+  </section>
+  {% endif %}
+</div>
+
+<script>
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const moduleColors = {
+    'Creative Intel':      '#7C3AED',
+    'Competitive Intel':   '#0891B2',
+    'Production+Playbooks':'#0F766E',
+    'Co-Pilot':            '#E55A3F',
+    'Agents':              '#B45309',
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const eng = {{ chart_engagement | tojson }};
+    const mix = {{ chart_module_mix | tojson }};
+
+    const engChart = new ApexCharts(document.querySelector('#chart-engagement'), {
+      chart: { type: 'area', height: 220, toolbar: { show: false }, animations: { enabled: !reduceMotion } },
+      series: [{ name: eng.metrics.events.label, data: eng.metrics.events.data }],
+      xaxis: {
+        categories: eng.categories, type: 'datetime',
+        labels: { datetimeFormatter: { year: 'yyyy', month: "MMM 'yy", day: 'dd MMM' }, style: { colors: '#52525B' } },
+        axisBorder: { color: '#E4E4E7' }, axisTicks: { color: '#E4E4E7' }
+      },
+      yaxis: { labels: { style: { colors: '#52525B' }, formatter: v => Math.round(v).toLocaleString() } },
+      grid: { borderColor: '#F4F4F5', strokeDashArray: 4 },
+      colors: ['#E55A3F'],
+      fill: { type: 'gradient', gradient: { shadeIntensity: 0.4, opacityFrom: 0.45, opacityTo: 0.05 } },
+      stroke: { curve: 'smooth', width: 2 },
+      dataLabels: { enabled: false },
+      tooltip: { x: { format: 'ddd dd MMM yyyy' } },
+    });
+    engChart.render();
+
+    const metricSel = document.getElementById('chart-engagement-metric');
+    const metricLbl = document.getElementById('chart-engagement-metric-label');
+    metricSel.addEventListener('change', () => {
+      const m = eng.metrics[metricSel.value];
+      if (!m) return;
+      engChart.updateSeries([{ name: m.label, data: m.data }]);
+      metricLbl.textContent = m.label.toLowerCase() + ' / day';
+    });
+
+    new ApexCharts(document.querySelector('#chart-modules'), {
+      chart: { type: 'donut', height: 240, animations: { enabled: !reduceMotion } },
+      series: mix.series,
+      labels: mix.labels,
+      colors: mix.labels.map(l => moduleColors[l] || '#A1A1AA'),
+      legend: { position: 'bottom', fontSize: '12px', labels: { colors: '#52525B' } },
+      dataLabels: { enabled: false },
+      plotOptions: { pie: { donut: { size: '64%', labels: { show: true, total: { show: true, label: 'Events', formatter: w => w.globals.seriesTotals.reduce((a,b)=>a+b,0).toLocaleString() } } } } },
+      tooltip: { y: { formatter: v => v.toLocaleString() + ' events' } },
+      stroke: { colors: ['#FFFFFF'] },
+    }).render();
+  });
+</script>
+{% endblock %}

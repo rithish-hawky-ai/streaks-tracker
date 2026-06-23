@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="space-y-6">
+
+  <header class="space-y-1">
+    <h1 class="text-2xl font-semibold">Co-Pilot adoption</h1>
+    <p class="text-sm text-ink-600">
+      Tier per brand_id based on <strong>rolling 7 IST days</strong> of Co-Pilot events.
+      Heavy <strong class="tnum">&gt; {{ thresholds.heavy }} / wk</strong> ·
+      Moderate <strong class="tnum">&gt; {{ thresholds.moderate }} / wk</strong> ·
+      Trialing <strong class="tnum">1 – {{ thresholds.moderate }}</strong> ·
+      Never <strong class="tnum">0</strong>.
+      Configure in <a href="{{ url_for('config_page', tab='settings') }}" class="text-coral-deep hover:underline">Settings</a>.
+    </p>
+  </header>
+
+  <!-- Messages-sent headline (the canonical adoption signal) -->
+  <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="rounded-card border border-coral bg-coral-subtle p-4">
+      <div class="text-[11px] uppercase tracking-wide text-coral-deep">Messages sent · 7d</div>
+      <div class="text-3xl font-semibold tnum mt-1 text-coral-deep">{{ totals.messages_week }}</div>
+      <div class="text-xs text-coral-deep mt-1">{{ totals.msg_brands_week }} brand{{ '' if totals.msg_brands_week == 1 else 's' }} pushing queries</div>
+    </div>
+    <div class="rounded-card border border-surf-200 bg-white p-4">
+      <div class="text-[11px] uppercase tracking-wide text-ink-400">Messages sent · {{ day_window }}d</div>
+      <div class="text-3xl font-semibold tnum mt-1">{{ totals.messages_window }}</div>
+      <div class="text-xs text-ink-400 mt-1">rolling-window total</div>
+    </div>
+    <div class="md:col-span-2 rounded-card border border-dashed border-surf-200 bg-surf-50 p-4 text-xs text-ink-600">
+      <div class="text-[11px] uppercase tracking-wide text-ink-400 mb-1">Event tracked</div>
+      <code class="font-mono text-ink-900">{{ msg_event }}</code><br>
+      <span class="text-ink-400">Configurable in Settings → "Co-Pilot message event". This is the high-signal metric for adoption (vs total Co-Pilot events, which includes toggle clicks, history views, etc.).</span>
+    </div>
+  </section>
+
+  <!-- Bucket pills (click to filter) -->
+  <section class="grid grid-cols-2 md:grid-cols-5 gap-3">
+    {% set bucket_meta = {
+      'heavy':    {'label': 'Heavy',    'desc': '> ' ~ thresholds.heavy ~ '/wk'},
+      'moderate': {'label': 'Moderate', 'desc': '> ' ~ thresholds.moderate ~ '/wk'},
+      'trialing': {'label': 'Trialing', 'desc': '1 – ' ~ thresholds.moderate ~ '/wk'},
+      'never':    {'label': 'Never',    'desc': '0 / wk'},
+    } %}
+
+    <a href="{{ url_for('copilot_page') }}"
+       class="rounded-card border p-4 transition-colors
+       {% if not f_bucket %}border-coral bg-coral-subtle text-coral-deep{% else %}border-surf-200 bg-white hover:border-coral{% endif %}">
+      <div class="text-[11px] uppercase tracking-wide text-ink-400">All brands</div>
+      <div class="text-3xl font-semibold tnum mt-1">{{ total_rows }}</div>
+      <div class="text-xs text-ink-400 mt-1">on the roster</div>
+    </a>
+    {% for b in buckets %}
+    <a href="{{ url_for('copilot_page', bucket=b) }}"
+       class="rounded-card border p-4 transition-colors
+       {% if f_bucket == b %}border-coral bg-coral-subtle text-coral-deep{% else %}border-surf-200 bg-white hover:border-coral{% endif %}">
+      <div class="text-[11px] uppercase tracking-wide text-ink-400">{{ bucket_meta[b].label }}</div>
+      <div class="text-3xl font-semibold tnum mt-1 {% if b == 'never' %}text-coral-deep{% elif b == 'heavy' %}text-coral-deep{% endif %}">{{ counts[b] }}</div>
+      <div class="text-xs text-ink-400 mt-1">{{ bucket_meta[b].desc }}</div>
+    </a>
+    {% endfor %}
+  </section>
+
+  <!-- Outreach panel: never-used brands + Copy as CSV -->
+  <section class="rounded-card border border-surf-200 bg-white">
+    <div class="px-5 py-3 border-b border-surf-200 flex items-center justify-between flex-wrap gap-3">
+      <div>
+        <h2 class="font-semibold">Outreach list · Never used Co-Pilot</h2>
+        <p class="text-xs text-ink-400 mt-0.5">{{ never_rows|length }} brands. Order: agency → parent → name.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="copy-feedback" class="text-xs text-coral-deep tnum" aria-live="polite"></span>
+        <button type="button" id="copy-never-csv"
+                aria-label="Copy the never-used outreach list to clipboard as CSV"
+                class="px-3 py-1.5 rounded-card bg-coral text-white hover:bg-coral-hover text-xs font-medium">
+          Copy as CSV
+        </button>
+      </div>
+    </div>
+    {% if never_rows %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" id="never-table">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            <th class="px-4 py-2">Brand</th>
+            <th class="px-4 py-2">Agency</th>
+            <th class="px-4 py-2">Parent</th>
+            <th class="px-4 py-2 text-right">21d events (any module)</th>
+            <th class="px-4 py-2">brand_id</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in never_rows %}
+          <tr class="border-t border-surf-200 hover:bg-surf-50"
+              data-brand-id="{{ r.brand.brand_id }}"
+              data-brand-name="{{ r.brand.brand_name }}"
+              data-agency="{{ r.brand.agency or '' }}"
+              data-parent="{{ r.brand.parent_company or '' }}"
+              data-last-seen="">
+            <td class="px-4 py-2"><a href="{{ url_for('brand_page', brand_id=r.brand.brand_id) }}" class="font-medium hover:text-coral-deep">{{ r.brand.brand_name }}</a>{% if r.brand.instance_label %} <span class="text-ink-400 text-xs">· {{ r.brand.instance_label }}</span>{% endif %}</td>
+            <td class="px-4 py-2 text-ink-600">{{ r.brand.agency or '—' }}</td>
+            <td class="px-4 py-2 text-ink-600 italic">{{ r.brand.parent_company or '—' }}</td>
+            <td class="px-4 py-2 text-right tnum">{{ r.window_events }}</td>
+            <td class="px-4 py-2 font-mono text-[11px] text-ink-400">{{ r.brand.brand_id }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-10 text-center text-sm text-ink-600">
+      Every brand on the roster has tried Co-Pilot. 🎉<br>
+      <span class="text-xs text-ink-400">(emoji used intentionally for celebration; switch to icon if you'd rather)</span>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- Per-brand adoption table -->
+  <section class="rounded-card border border-surf-200 bg-white overflow-hidden">
+    <div class="px-5 py-3 border-b border-surf-200 flex items-center justify-between flex-wrap gap-3">
+      <h2 class="font-semibold">
+        Per-brand adoption · {{ rows|length }} brand{{ '' if rows|length == 1 else 's' }}{% if f_bucket %} in tier <span class="text-coral-deep">{{ f_bucket }}</span>{% endif %}
+      </h2>
+      <p class="text-xs text-ink-400">Sparkline: Co-Pilot events / day over last {{ day_window }} days (IST).</p>
+    </div>
+    {% if rows %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-surf-50 text-ink-600 text-left text-xs">
+          <tr>
+            <th class="px-4 py-2">Tier</th>
+            <th class="px-4 py-2">Org</th>
+            <th class="px-4 py-2">Brand</th>
+            <th class="px-4 py-2 text-right bg-coral-subtle text-coral-deep" title="Co-Pilot messages sent in the last 7 IST days">7d msgs ★</th>
+            <th class="px-4 py-2 text-right bg-coral-subtle text-coral-deep" title="Co-Pilot messages sent in the {{ day_window }}-day window">{{ day_window }}d msgs ★</th>
+            <th class="px-4 py-2">{{ day_window }}d msgs trend</th>
+            <th class="px-4 py-2 text-right">7d events <span class="text-[10px] text-ink-400 font-normal">(all)</span></th>
+            <th class="px-4 py-2 text-right">7d users</th>
+            <th class="px-4 py-2 text-right">{{ day_window }}d events</th>
+            <th class="px-4 py-2">{{ day_window }}d events trend</th>
+            <th class="px-4 py-2">Last msg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="border-t border-surf-200 hover:bg-surf-50"
+              role="link" tabindex="0"
+              aria-label="Open drill-down for {{ r.brand.brand_name }} (Co-Pilot tier: {{ r.bucket }})"
+              onclick="if(event.target.tagName!=='A') window.location='{{ url_for('brand_page', brand_id=r.brand.brand_id) }}'"
+              onkeydown="if((event.key==='Enter'||event.key===' ')&&event.target.tagName!=='A'){event.preventDefault();window.location='{{ url_for('brand_page', brand_id=r.brand.brand_id) }}'}">
+            <td class="px-4 py-2 align-middle">
+              {% if r.bucket == 'heavy' %}
+                <span class="px-2 py-0.5 rounded-chip bg-coral text-white text-[11px] font-medium">Heavy</span>
+              {% elif r.bucket == 'moderate' %}
+                <span class="px-2 py-0.5 rounded-chip bg-coral-warm text-ink-900 text-[11px] font-medium">Moderate</span>
+              {% elif r.bucket == 'trialing' %}
+                <span class="px-2 py-0.5 rounded-chip bg-coral-subtle text-coral-deep text-[11px] font-medium">Trialing</span>
+              {% else %}
+                <span class="px-2 py-0.5 rounded-chip bg-surf-100 text-ink-600 text-[11px] font-medium">Never</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 align-middle">
+              <div class="flex flex-col gap-0.5">
+                {% if r.brand.agency %}<span class="px-2 py-0.5 rounded-chip bg-surf-100 text-[11px] text-ink-600">{{ r.brand.agency }}</span>{% endif %}
+                {% if r.brand.parent_company %}<span class="px-2 py-0.5 rounded-chip border border-surf-200 text-[11px] text-ink-600 italic">↳ {{ r.brand.parent_company }}</span>{% endif %}
+                {% if not r.brand.agency and not r.brand.parent_company %}<span class="text-[11px] text-ink-400">direct</span>{% endif %}
+              </div>
+            </td>
+            <td class="px-4 py-2 align-middle">
+              <div class="font-medium">{{ r.brand.brand_name }}{% if r.brand.instance_label %}<span class="text-ink-400 text-xs"> · {{ r.brand.instance_label }}</span>{% endif %}</div>
+              <div class="text-xs text-ink-400 font-mono">{{ r.brand.brand_id }}</div>
+            </td>
+            <td class="px-4 py-2 align-middle text-right tnum font-semibold {% if r.week_messages > 0 %}text-coral-deep{% else %}text-ink-400{% endif %}">{{ r.week_messages }}</td>
+            <td class="px-4 py-2 align-middle text-right tnum {% if r.window_messages == 0 %}text-ink-400{% endif %}">{{ r.window_messages }}</td>
+            <td class="px-4 py-2 align-middle">
+              <span class="tip-host inline-block"
+                    data-tip="{{ day_window }}d Co-Pilot messages-sent spark · max {{ r.msg_spark|max }} msgs/day">
+                <svg width="64" height="16" viewBox="0 0 60 16" aria-hidden="true">
+                  <polyline points="{{ r.msg_spark_points }}" fill="none" stroke="#E55A3F" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                </svg>
+              </span>
+            </td>
+            <td class="px-4 py-2 align-middle text-right tnum {% if r.bucket == 'heavy' %}text-coral-deep font-semibold{% elif r.week_events == 0 %}text-ink-400{% endif %}">{{ r.week_events }}</td>
+            <td class="px-4 py-2 align-middle text-right tnum {% if r.week_users == 0 %}text-ink-400{% endif %}">{{ r.week_users }}</td>
+            <td class="px-4 py-2 align-middle text-right tnum">{{ r.window_events }}</td>
+            <td class="px-4 py-2 align-middle">
+              <span class="tip-host inline-block"
+                    data-tip="{{ day_window }}d total Co-Pilot events spark · max {{ r.spark|max }} events/day">
+                <svg width="64" height="16" viewBox="0 0 60 16" aria-hidden="true">
+                  <polyline points="{{ r.spark_points }}" fill="none" stroke="#A1A1AA" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                </svg>
+              </span>
+            </td>
+            <td class="px-4 py-2 align-middle text-xs tnum text-ink-600 whitespace-nowrap">
+              {% if r.last_message %}
+                <a href="{{ url_for('brand_page', brand_id=r.brand.brand_id, tab='sections') }}#mod-Co-Pilot"
+                   onclick="event.stopPropagation()"
+                   class="hover:text-coral-deep tip-host inline-block"
+                   data-tip="Open the Co-Pilot section for this brand">{{ r.last_message[:16] }}</a>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-10 text-center text-ink-400 text-sm">No brands in this tier.</div>
+    {% endif %}
+  </section>
+</div>
+
+<script>
+  document.getElementById('copy-never-csv')?.addEventListener('click', async () => {
+    const rows = document.querySelectorAll('#never-table tbody tr[data-brand-id]');
+    const header = ['brand_id', 'brand', 'agency', 'parent_company'];
+    const lines = [header.join(',')];
+    const csvField = (s) => {
+      const v = (s ?? '').toString();
+      return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    };
+    for (const r of rows) {
+      lines.push([
+        csvField(r.dataset.brandId),
+        csvField(r.dataset.brandName),
+        csvField(r.dataset.agency),
+        csvField(r.dataset.parent),
+      ].join(','));
+    }
+    const csv = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(csv);
+      const fb = document.getElementById('copy-feedback');
+      fb.textContent = `✓ Copied ${rows.length} rows`;
+      setTimeout(() => { fb.textContent = ''; }, 2500);
+    } catch (err) {
+      // Fallback: open a textarea + select
+      const ta = document.createElement('textarea');
+      ta.value = csv;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      const fb = document.getElementById('copy-feedback');
+      fb.textContent = `✓ Copied (fallback) ${rows.length} rows`;
+      setTimeout(() => { fb.textContent = ''; }, 2500);
+    }
+  });
+</script>
+{% endblock %}

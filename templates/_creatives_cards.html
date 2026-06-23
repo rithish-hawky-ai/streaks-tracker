@@ -1,0 +1,51 @@
+{# Shared KPI-card strip for both creative screens. Expects `cards` in context. #}
+<section class="grid grid-cols-2 md:grid-cols-5 gap-3">
+  <div class="rounded-card border border-coral bg-coral-subtle p-4"
+       title="Counts every generation, including re-generations of the same cell. Reflects generation volume, not the number of final assets in a table.">
+    <div class="text-[11px] uppercase tracking-wide text-coral-deep">Creatives generated</div>
+    <div class="text-3xl font-semibold tnum mt-1 text-coral-deep">{{ '{:,}'.format(cards.total) }}</div>
+    <div class="text-xs mt-1">
+      {% if cards.delta_pct is not none %}
+        <span class="{{ 'text-green-700' if cards.delta_pct >= 0 else 'text-red-700' }}">
+          {{ '▲' if cards.delta_pct >= 0 else '▼' }} {{ cards.delta_pct|abs }}% vs prev period
+        </span>
+      {% elif not cards.prev_reliable %}
+        <span class="text-coral-deep/60" title="No comparable data before the tracked window start">— vs prev period</span>
+      {% else %}
+        <span class="text-coral-deep/60">new this period</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="rounded-card border border-surf-200 bg-white p-4">
+    <div class="text-[11px] uppercase tracking-wide text-ink-400">Brand-made</div>
+    <div class="text-3xl font-semibold tnum mt-1">{{ '{:,}'.format(cards.brand_made) }}</div>
+    <div class="text-xs text-ink-400 mt-1">{{ cards.brand_pct }}% of total · {{ cards.brand_users }} brand user{{ '' if cards.brand_users == 1 else 's' }}</div>
+  </div>
+
+  <div class="rounded-card border border-surf-200 bg-white p-4">
+    <div class="text-[11px] uppercase tracking-wide text-ink-400">Hawky-made</div>
+    <div class="text-3xl font-semibold tnum mt-1">{{ '{:,}'.format(cards.hawky_made) }}</div>
+    <div class="text-xs text-ink-400 mt-1">{{ cards.hawky_pct }}% of total · {{ cards.hawky_users }} team member{{ '' if cards.hawky_users == 1 else 's' }}</div>
+  </div>
+
+  <div class="rounded-card border border-surf-200 bg-white p-4">
+    <div class="text-[11px] uppercase tracking-wide text-ink-400">Agent-made</div>
+    <div class="text-3xl font-semibold tnum mt-1">{{ '{:,}'.format(cards.agent_made) }}</div>
+    <div class="text-xs text-ink-400 mt-1">{{ cards.agent_pct }}% · automated</div>
+  </div>
+
+  <div class="rounded-card border border-surf-200 bg-white p-4">
+    <div class="text-[11px] uppercase tracking-wide text-ink-400">Top source</div>
+    <div class="text-2xl font-semibold mt-1">{{ cards.top_source.label }}</div>
+    <div class="text-xs text-ink-400 mt-1 tnum">{{ '{:,}'.format(cards.top_source.count) }} creatives · {{ cards.top_source.pct }}% of total</div>
+  </div>
+</section>
+
+{% if cards.unattributed %}
+<p class="text-xs text-ink-400">
+  <span class="inline-block w-2 h-2 rounded-full bg-surf-200 align-middle"></span>
+  <strong class="tnum">{{ '{:,}'.format(cards.unattributed) }}</strong> creatives ({{ cards.unattr_pct }}%) are
+  <strong>unattributed</strong> — produced by automated/system flows that didn’t capture a creator. Shown honestly, never guessed.
+</p>
+{% endif %}
