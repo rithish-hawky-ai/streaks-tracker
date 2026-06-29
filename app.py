@@ -45,6 +45,25 @@ _AUTH_REALM = 'Basic realm="streak-tracker", charset="UTF-8"'
 _AUTH_EXEMPT_ENDPOINTS = {"healthz", "login", "auth_google", "auth_callback", "logout", "static"}
 _AUTH_EXEMPT_PATHS = {"/healthz"}
 
+# ---- Iframe embedding ----------------------------------------------------
+# When the app is embedded inside an allowed parent site, skip authentication
+# (the parent app handles its own auth).
+_ALLOWED_IFRAME_PARENTS = {
+    "https://hawky-csm-task-intelligence.vercel.app",
+}
+
+
+def _is_embedded_request():
+    """Return True if the request is coming from within an allowed iframe."""
+    referrer = request.referrer or ""
+    return any(referrer.startswith(parent) for parent in _ALLOWED_IFRAME_PARENTS)
+
+
+# Session cookies must be sent in cross-site (iframe) contexts.
+# SameSite=None requires Secure=True (the app is always behind TLS in prod).
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True
+
 oauth = OAuth(app)
 
 
@@ -76,6 +95,10 @@ def _require_auth():
     if request.endpoint in _AUTH_EXEMPT_ENDPOINTS or request.path in _AUTH_EXEMPT_PATHS:
         return
 
+    # Skip auth when embedded inside an allowed parent site's iframe.
+    if _is_embedded_request():
+        return
+
     if _oauth_enabled():
         if session.get("user"):
             return
@@ -96,6 +119,14 @@ def _require_auth():
         or not _secrets.compare_digest(auth.password or "", _AUTH_PASSWORD)
     ):
         return Response("Auth required", 401, {"WWW-Authenticate": _AUTH_REALM})
+
+
+@app.after_request
+def _allow_iframe_embedding(response):
+    """Allow the app to be embedded in iframes from trusted parent sites."""
+    allowed = " ".join(_ALLOWED_IFRAME_PARENTS)
+    response.headers["Content-Security-Policy"] = f"frame-ancestors 'self' {allowed}"
+    return response
 
 
 @app.route("/login")
